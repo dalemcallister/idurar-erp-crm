@@ -1,0 +1,12 @@
+include: package:flutter_lints/flutter.yaml
+
+linter:
+  rules:
+    prefer_const_constructors: true
+    avoid_print: false
+
+analyzer:
+  errors:
+    # The app ships before the platform folders are regenerated with
+    # `flutter create .`; keep analysis focused on lib/.
+    invalid_annotation_target: ignore
