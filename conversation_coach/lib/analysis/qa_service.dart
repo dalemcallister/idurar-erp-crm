@@ -6,7 +6,6 @@ import 'package:uuid/uuid.dart';
 import '../data/models/provider_config.dart';
 import '../data/models/qa.dart';
 import '../data/models/segment.dart';
-import '../data/models/speaker.dart';
 import '../data/repository.dart';
 import '../llm/llm_provider.dart';
 import '../llm/prompt_registry.dart';

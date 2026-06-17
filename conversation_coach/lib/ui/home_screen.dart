@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../core/app_state.dart';
+import '../data/models/provider_config.dart';
 import 'new_session_screen.dart';
 
 /// Home / Record — the home screen's primary action is Record (Design
