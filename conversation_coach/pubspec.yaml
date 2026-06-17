@@ -24,8 +24,10 @@ dependencies:
   path_provider: ^2.1.3
   flutter_secure_storage: ^9.2.2
 
-  # Audio capture (built-in + USB-C UAC input) and playback.
-  record: ^5.1.2
+  # Audio capture (built-in + USB-C UAC input) and playback. 7.x keeps the
+  # federated sub-packages (incl. record_linux) version-aligned, avoiding the
+  # interface mismatch present in the 5.x line.
+  record: ^7.1.0
   audioplayers: ^6.0.0
 
   # Networking for the cloud model + transcription adapters (Anthropic Messages
