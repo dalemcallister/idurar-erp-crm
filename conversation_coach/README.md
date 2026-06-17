@@ -126,5 +126,5 @@ same interfaces so they slot in without a rewrite.
 - Acoustic/prosodic features are currently derived from timing and text; the
   hooks to compute them from the full-quality USB-C waveform are in
   `FeatureExtractor` (Phase 2).
-- The encryption-key generator in `SecureKeystore` uses a platform timestamp
-  mix for the SQLCipher handle; swap in a crypto-grade RNG before shipping.
+- The SQLCipher database key is generated with `Random.secure()` (a
+  cryptographically secure RNG) on first run and then held in the OS keystore.

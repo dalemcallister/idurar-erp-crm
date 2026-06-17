@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 /// Wraps the OS keystore (iOS Keychain / Android Keystore) for provider API
@@ -36,19 +38,10 @@ class SecureKeystore {
   Future<void> wipeAll() => _storage.deleteAll();
 
   String _randomKey() {
-    // 256-bit key derived from the platform's secure RNG via the storage
-    // plugin's own entropy is not exposed, so use Dart's DateTime+hashCode mix
-    // seeded into a long hex string. On device, prefer a crypto RNG; this is a
-    // reasonable default for the encrypted store handle.
-    final now = DateTime.now().microsecondsSinceEpoch;
-    final buf = StringBuffer();
-    var x = now ^ 0x9E3779B97F4A7C15;
-    for (var i = 0; i < 16; i++) {
-      x ^= x << 13;
-      x ^= x >> 7;
-      x ^= x << 17;
-      buf.write((x & 0xffff).toRadixString(16).padLeft(4, '0'));
-    }
-    return buf.toString();
+    // 256-bit key from a cryptographically secure RNG, hex-encoded. Used once
+    // as the SQLCipher database key and then held in the OS keystore.
+    final rng = Random.secure();
+    final bytes = List<int>.generate(32, (_) => rng.nextInt(256));
+    return bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
   }
 }
