@@ -37,10 +37,8 @@
         </activity>
 
         <!-- Foreground service used by the recorder for background capture. -->
-        <service
-            android:name="com.llfbandit.record.RecordService"
-            android:foregroundServiceType="microphone"
-            android:exported="false" />
+        <!-- The record plugin contributes its own foreground service via
+             manifest merging; we only declare the permissions it needs. -->
 
         <meta-data
             android:name="flutterEmbedding"

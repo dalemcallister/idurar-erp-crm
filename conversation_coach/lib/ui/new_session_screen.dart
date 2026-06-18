@@ -41,18 +41,23 @@ class _NewSessionScreenState extends State<NewSessionScreen> {
   }
 
   Future<void> _loadInputs() async {
-    final hasPerm = await _capture.hasPermission();
-    if (!hasPerm) return;
-    final inputs = await _capture.listInputs();
+    // Trigger the runtime mic-permission request up front.
+    await _capture.hasPermission();
+    var inputs = <MicInput>[];
+    try {
+      inputs = await _capture.listInputs();
+    } catch (_) {
+      // Some platforms/emulators don't enumerate inputs — fall back below.
+    }
     if (!mounted) return;
+    // Always offer a usable default so recording is never blocked, even when
+    // enumeration returns nothing (common on emulators / before permission).
+    const fallback = MicInput(id: 'default', label: 'Default microphone');
+    final list = inputs.isEmpty ? [fallback] : inputs;
     setState(() {
-      _inputs = inputs;
-      _selectedInput = inputs.firstWhere(
-        (d) => d.isUsb,
-        orElse: () => inputs.isNotEmpty
-            ? inputs.first
-            : const MicInput(id: 'default', label: 'Built-in microphone'),
-      );
+      _inputs = list;
+      _selectedInput =
+          list.firstWhere((d) => d.isUsb, orElse: () => list.first);
     });
   }
 

@@ -85,7 +85,7 @@ class AudioCapture {
       encoder: rec.AudioEncoder.wav,
       sampleRate: sampleRate,
       numChannels: channels,
-      device: rec.InputDevice(id: device.id, label: device.label),
+      device: _deviceArg(device),
     );
     double peak = 0;
     final sub = _recorder
@@ -122,12 +122,21 @@ class AudioCapture {
       encoder: rec.AudioEncoder.wav,
       sampleRate: _sampleRate,
       numChannels: _channels,
-      device: rec.InputDevice(id: device.id, label: device.label),
+      device: _deviceArg(device),
     );
     await _recorder.start(config, path: filePath);
     _startedAt = DateTime.now();
     _beginMeters();
   }
+
+  /// Only pass an explicit input device when it's a real enumerated device.
+  /// Our synthetic "default" entry (and any case where enumeration was empty)
+  /// must pass null so the OS binds the system default microphone — passing a
+  /// bogus device id fails to connect to the mic on Android.
+  rec.InputDevice? _deviceArg(MicInput device) =>
+      device.id == 'default' || device.id.isEmpty
+          ? null
+          : rec.InputDevice(id: device.id, label: device.label);
 
   Future<void> pause() async {
     await _recorder.pause();
