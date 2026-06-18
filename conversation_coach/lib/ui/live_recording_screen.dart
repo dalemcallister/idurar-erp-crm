@@ -124,7 +124,12 @@ class _LiveRecordingScreenState extends State<LiveRecordingScreen> {
       final goal = await state.repo.goal(session.goalId);
       final rubric =
           goal == null ? null : await state.repo.rubric(goal.rubricId);
-      if (goal == null || rubric == null) return;
+      if (goal == null || rubric == null) {
+        debugPrint('[PIPELINE] missing goal/rubric for ${session.goalId} '
+            '-> marking failed');
+        await state.repo.updateSessionStatus(session.id, SessionStatus.failed);
+        return;
+      }
       final engine = await state.transcriptionEngine();
       await state.orchestrator.run(
         session: session,
@@ -134,7 +139,8 @@ class _LiveRecordingScreenState extends State<LiveRecordingScreen> {
         providerConfig: state.preferredProvider,
         audioPath: audioPath,
       );
-    } catch (e) {
+    } catch (e, st) {
+      debugPrint('[PIPELINE] FAILED for ${session.id}: $e\n$st');
       await state.repo.updateSessionStatus(session.id, SessionStatus.failed);
     }
   }
