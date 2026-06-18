@@ -13,6 +13,7 @@ import '../transcription/cloud_transcription.dart';
 import '../transcription/mock_transcription.dart';
 import '../transcription/transcription_engine.dart';
 import 'goal_templates.dart';
+import 'pricing.dart';
 
 /// Settings keys persisted in the encrypted `app_settings` table.
 class SettingsKeys {
@@ -313,6 +314,42 @@ class AppState extends ChangeNotifier {
       }
     }
     return MockTranscriptionEngine();
+  }
+
+  // ---- Analysis pipeline ---------------------------------------------------
+
+  /// Runs transcription + analysis for a recorded session against its goal and
+  /// rubric, drawing the estimated cost down from the prepaid budget. Marks the
+  /// session failed on any error. Shared by live recording and the retry action
+  /// so a transient failure (e.g. a flaky network) can be re-run on the audio
+  /// already on disk — no re-recording needed.
+  Future<void> runAnalysisPipeline(Session session, String audioPath) async {
+    try {
+      final goal = await repo.goal(session.goalId);
+      final rubric = goal == null ? null : await repo.rubric(goal.rubricId);
+      if (goal == null || rubric == null) {
+        debugPrint('[PIPELINE] missing goal/rubric for ${session.goalId} '
+            '-> marking failed');
+        await repo.updateSessionStatus(session.id, SessionStatus.failed);
+        return;
+      }
+      final engine = await transcriptionEngine();
+      final analysis = await orchestrator.run(
+        session: session,
+        goal: goal,
+        rubric: rubric,
+        transcriptionEngine: engine,
+        providerConfig: preferredProvider,
+        audioPath: audioPath,
+      );
+      // Draw the estimated cost down from the prepaid budget (F-MOD-06).
+      final cost = Pricing.estimateCost(
+          analysis.modelUsed, analysis.inputTokens, analysis.outputTokens);
+      if (cost != null) await recordSpend(cost);
+    } catch (e, st) {
+      debugPrint('[PIPELINE] FAILED for ${session.id}: $e\n$st');
+      await repo.updateSessionStatus(session.id, SessionStatus.failed);
+    }
   }
 
   // ---- Destructive: wipe everything (F-DAT-02) -----------------------------

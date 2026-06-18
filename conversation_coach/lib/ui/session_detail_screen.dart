@@ -89,6 +89,34 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     }
   }
 
+  /// Re-runs transcription + analysis on the audio already on disk — used to
+  /// recover a session that failed transiently (e.g. a network/transcription
+  /// error) without having to record it again.
+  Future<void> _retryAnalysis() async {
+    final state = context.read<AppState>();
+    final session = _session;
+    if (session == null) return;
+    final rec = _recording ??
+        await state.repo.recordingForSession(widget.sessionId);
+    if (rec == null || !await File(rec.encryptedPath).exists()) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('The recording is no longer on this device, so '
+                'analysis can’t be retried.')));
+      }
+      return;
+    }
+    // Flip the UI back into processing and re-run in the background.
+    await state.repo.updateSessionStatus(session.id, SessionStatus.transcribing);
+    state.runAnalysisPipeline(session, rec.encryptedPath);
+    if (!mounted) return;
+    setState(() {
+      _session = session..status = SessionStatus.transcribing;
+      _loadError = null;
+    });
+    _poll ??= Timer.periodic(const Duration(seconds: 2), (_) => _load());
+  }
+
   Future<void> _playFrom(int ms) async {
     final rec = _recording;
     if (rec == null) return;
@@ -182,6 +210,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                   setState(() => _loadError = null);
                   _load();
                 },
+                onRetryAnalysis: _retryAnalysis,
               ),
       ),
     );
@@ -216,10 +245,12 @@ class _ProcessingState extends StatelessWidget {
   final SessionStatus status;
   final Object? loadError;
   final VoidCallback? onRetry;
+  final VoidCallback? onRetryAnalysis;
   const _ProcessingState({
     required this.status,
     this.loadError,
     this.onRetry,
+    this.onRetryAnalysis,
   });
 
   @override
@@ -262,19 +293,28 @@ class _ProcessingState extends StatelessWidget {
       );
     }
     if (status == SessionStatus.failed) {
-      return const Center(
+      return Center(
         child: Padding(
-          padding: EdgeInsets.all(24),
+          padding: const EdgeInsets.all(24),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.error_outline, size: 48, color: Color(0xFFB44A3F)),
-              SizedBox(height: 16),
-              Text(
-                "Analysis couldn't complete. Make sure the recording captured "
-                'speech and your provider keys are set, then record again.',
+              const Icon(Icons.error_outline,
+                  size: 48, color: Color(0xFFB44A3F)),
+              const SizedBox(height: 16),
+              const Text(
+                "Analysis couldn't complete. The recording is kept — make sure "
+                'your provider keys are set, then retry on the same audio (no '
+                'need to re-record).',
                 textAlign: TextAlign.center,
               ),
+              const SizedBox(height: 16),
+              if (onRetryAnalysis != null)
+                FilledButton.icon(
+                  onPressed: onRetryAnalysis,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Retry analysis'),
+                ),
             ],
           ),
         ),

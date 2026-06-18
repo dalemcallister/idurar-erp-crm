@@ -9,7 +9,6 @@ import 'package:uuid/uuid.dart';
 
 import '../audio/audio_capture.dart';
 import '../core/app_state.dart';
-import '../core/pricing.dart';
 import '../data/models/session.dart';
 import 'session_detail_screen.dart';
 
@@ -111,43 +110,12 @@ class _LiveRecordingScreenState extends State<LiveRecordingScreen> {
 
     // Kick off transcription + analysis in the background; the detail screen
     // shows progress and updates when ready.
-    _runPipeline(state, session, recording.encryptedPath);
+    state.runAnalysisPipeline(session, recording.encryptedPath);
 
     if (!mounted) return;
     Navigator.of(context).pushReplacement(MaterialPageRoute(
       builder: (_) => SessionDetailScreen(sessionId: session.id),
     ));
-  }
-
-  Future<void> _runPipeline(
-      AppState state, Session session, String audioPath) async {
-    try {
-      final goal = await state.repo.goal(session.goalId);
-      final rubric =
-          goal == null ? null : await state.repo.rubric(goal.rubricId);
-      if (goal == null || rubric == null) {
-        debugPrint('[PIPELINE] missing goal/rubric for ${session.goalId} '
-            '-> marking failed');
-        await state.repo.updateSessionStatus(session.id, SessionStatus.failed);
-        return;
-      }
-      final engine = await state.transcriptionEngine();
-      final analysis = await state.orchestrator.run(
-        session: session,
-        goal: goal,
-        rubric: rubric,
-        transcriptionEngine: engine,
-        providerConfig: state.preferredProvider,
-        audioPath: audioPath,
-      );
-      // Draw the estimated cost down from the prepaid budget (F-MOD-06).
-      final cost = Pricing.estimateCost(
-          analysis.modelUsed, analysis.inputTokens, analysis.outputTokens);
-      if (cost != null) await state.recordSpend(cost);
-    } catch (e, st) {
-      debugPrint('[PIPELINE] FAILED for ${session.id}: $e\n$st');
-      await state.repo.updateSessionStatus(session.id, SessionStatus.failed);
-    }
   }
 
   @override
