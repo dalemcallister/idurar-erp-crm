@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:sqflite_sqlcipher/sqflite.dart';
 
 import 'database.dart';
@@ -151,7 +152,14 @@ class Repository {
         whereArgs: [sessionId],
         orderBy: 'createdAt DESC',
         limit: 1);
-    return rows.isEmpty ? null : Analysis.fromMap(rows.first);
+    debugPrint('[REPO] analysisForSession($sessionId) rows=${rows.length}');
+    if (rows.isEmpty) return null;
+    try {
+      return Analysis.fromMap(rows.first);
+    } catch (e, st) {
+      debugPrint('[REPO] Analysis.fromMap FAILED: $e\n$st');
+      rethrow;
+    }
   }
 
   Future<List<Analysis>> allAnalyses() async =>
