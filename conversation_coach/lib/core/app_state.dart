@@ -71,7 +71,8 @@ class AppState extends ChangeNotifier {
   double budgetSpent = 0;
 
   bool get budgetEnabled => budgetDeposit > 0;
-  double get budgetRemaining => (budgetDeposit - budgetSpent).clamp(0, 1 << 31);
+  double get budgetRemaining =>
+      (budgetDeposit - budgetSpent).clamp(0.0, double.infinity);
   bool get budgetExhausted => budgetEnabled && budgetRemaining <= 0;
   bool get budgetLow =>
       budgetEnabled &&
