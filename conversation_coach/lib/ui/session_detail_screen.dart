@@ -38,6 +38,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
   Map<String, Speaker> _speakers = {};
   List<Recommendation> _recommendations = [];
   Recording? _recording;
+  Object? _loadError;
 
   Timer? _poll;
 
@@ -49,25 +50,36 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
 
   Future<void> _load() async {
     final state = context.read<AppState>();
+    // Load the session first and render the shell immediately, so a later
+    // read/parse error can't blank the whole screen into a spinner.
     final session = await state.repo.session(widget.sessionId);
-    final analysis = await state.repo.analysisForSession(widget.sessionId);
-    final segments = await state.repo.segments(widget.sessionId);
-    final speakers = await state.repo.speakerMap(widget.sessionId);
-    final recs = await state.repo.recommendations(widget.sessionId);
-    final recording = await state.repo.recordingForSession(widget.sessionId);
     if (!mounted) return;
-    setState(() {
-      _session = session;
-      _analysis = analysis;
-      _segments = segments;
-      _speakers = speakers;
-      _recommendations = recs;
-      _recording = recording;
-    });
+    setState(() => _session = session);
+    if (session == null) return;
+
+    try {
+      final analysis = await state.repo.analysisForSession(widget.sessionId);
+      final segments = await state.repo.segments(widget.sessionId);
+      final speakers = await state.repo.speakerMap(widget.sessionId);
+      final recs = await state.repo.recommendations(widget.sessionId);
+      final recording =
+          await state.repo.recordingForSession(widget.sessionId);
+      if (!mounted) return;
+      setState(() {
+        _analysis = analysis;
+        _segments = segments;
+        _speakers = speakers;
+        _recommendations = recs;
+        _recording = recording;
+        _loadError = null;
+      });
+    } catch (e, st) {
+      debugPrint('SessionDetail _load failed for ${widget.sessionId}: $e\n$st');
+      if (mounted) setState(() => _loadError = e);
+    }
 
     // While the background pipeline runs, poll until the report is ready.
-    if (session != null &&
-        session.status != SessionStatus.ready &&
+    if (session.status != SessionStatus.ready &&
         session.status != SessionStatus.failed) {
       _poll ??= Timer.periodic(
           const Duration(seconds: 2), (_) => _load());
@@ -163,7 +175,14 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                   AskView(sessionId: session.id),
                 ],
               )
-            : _ProcessingState(status: session.status),
+            : _ProcessingState(
+                status: session.status,
+                loadError: _loadError,
+                onRetry: () {
+                  setState(() => _loadError = null);
+                  _load();
+                },
+              ),
       ),
     );
   }
@@ -195,10 +214,53 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
 
 class _ProcessingState extends StatelessWidget {
   final SessionStatus status;
-  const _ProcessingState({required this.status});
+  final Object? loadError;
+  final VoidCallback? onRetry;
+  const _ProcessingState({
+    required this.status,
+    this.loadError,
+    this.onRetry,
+  });
 
   @override
   Widget build(BuildContext context) {
+    // The session is finished but the report couldn't be read/parsed back.
+    // Surface the real error instead of spinning forever.
+    if (loadError != null ||
+        (status == SessionStatus.ready)) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.error_outline,
+                  size: 48, color: Color(0xFFB44A3F)),
+              const SizedBox(height: 16),
+              const Text(
+                'This session finished, but its report could not be loaded.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+              if (loadError != null) ...[
+                const SizedBox(height: 8),
+                Text('$loadError',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                        fontSize: 12, color: Colors.black54)),
+              ],
+              const SizedBox(height: 16),
+              if (onRetry != null)
+                FilledButton.icon(
+                  onPressed: onRetry,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Retry'),
+                ),
+            ],
+          ),
+        ),
+      );
+    }
     if (status == SessionStatus.failed) {
       return const Center(
         child: Padding(
