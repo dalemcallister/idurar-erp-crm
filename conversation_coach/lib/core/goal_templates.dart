@@ -57,6 +57,25 @@ class GoalTemplates {
           RubricDimension(name: 'Pacing', weight: 0.15),
           RubricDimension(name: 'Empathy', weight: 0.1),
         ]),
+        const Rubric(id: 'rub-team', name: 'Team meeting', dimensions: [
+          RubricDimension(
+              name: 'Participation & inclusion',
+              weight: 0.25,
+              description: 'Did everyone get a voice and were people invited in?'),
+          RubricDimension(
+              name: 'Decisions & action items',
+              weight: 0.25,
+              description: 'Clear owners and next steps came out of the meeting.'),
+          RubricDimension(
+              name: 'Clarity',
+              weight: 0.2,
+              description: 'Agenda and points were clear and easy to follow.'),
+          RubricDimension(
+              name: 'Time management',
+              weight: 0.15,
+              description: 'Kept on track and to time.'),
+          RubricDimension(name: 'Listening', weight: 0.15),
+        ]),
       ];
 
   static List<Goal> goals() => const [
@@ -99,6 +118,16 @@ class GoalTemplates {
           name: 'Teaching',
           description: 'Explain clearly and check for understanding.',
           rubricId: 'rub-teaching',
+          isTemplate: true,
+        ),
+        Goal(
+          id: 'goal-team',
+          userId: null,
+          name: 'Team meeting',
+          description:
+              'Run an effective, inclusive team meeting with clear decisions '
+              'and action items.',
+          rubricId: 'rub-team',
           isTemplate: true,
         ),
       ];

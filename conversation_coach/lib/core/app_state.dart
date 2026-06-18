@@ -25,6 +25,10 @@ class SettingsKeys {
   static const asrEndpoint = 'asrEndpoint';
   static const asrModel = 'asrModel';
 
+  /// Prepaid spend budget (a "deposit" the cost meter draws down). USD.
+  static const budgetDeposit = 'budgetDepositUsd';
+  static const budgetSpent = 'budgetSpentUsd';
+
   /// Keystore handle for the speech-to-text (ASR) provider key — separate from
   /// the analysis provider's key, since transcription uses a different service.
   static const asrKeyRef = 'asr_api_key';
@@ -61,6 +65,19 @@ class AppState extends ChangeNotifier {
   String asrEndpoint = 'https://api.openai.com/v1';
   String asrModel = 'whisper-1';
 
+  /// Prepaid spend budget (F-MOD-06 extension). [budgetDeposit] is the total
+  /// topped up; [budgetSpent] is the running estimated spend drawn against it.
+  double budgetDeposit = 0;
+  double budgetSpent = 0;
+
+  bool get budgetEnabled => budgetDeposit > 0;
+  double get budgetRemaining => (budgetDeposit - budgetSpent).clamp(0, 1 << 31);
+  bool get budgetExhausted => budgetEnabled && budgetRemaining <= 0;
+  bool get budgetLow =>
+      budgetEnabled &&
+      budgetRemaining > 0 &&
+      budgetRemaining < budgetDeposit * 0.15;
+
   /// Id of the provider the user prefers (remembered across fallbacks).
   String preferredProviderId = ProviderConfig.defaultClaude().id;
 
@@ -81,15 +98,13 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> _seedIfNeeded() async {
-    // Goal/rubric templates.
-    final existingGoals = await repo.goals();
-    if (existingGoals.isEmpty) {
-      for (final r in GoalTemplates.rubrics()) {
-        await repo.upsertRubric(r);
-      }
-      for (final g in GoalTemplates.goals()) {
-        await repo.upsertGoal(g);
-      }
+    // Goal/rubric templates — upsert every launch (stable ids), so newly added
+    // templates appear on existing installs too. Custom user goals are untouched.
+    for (final r in GoalTemplates.rubrics()) {
+      await repo.upsertRubric(r);
+    }
+    for (final g in GoalTemplates.goals()) {
+      await repo.upsertGoal(g);
     }
 
     // Default provider configs: Claude (default, F-MOD-01) + the offline demo.
@@ -117,6 +132,12 @@ class AppState extends ChangeNotifier {
     asrEndpoint = await repo.getSetting(SettingsKeys.asrEndpoint) ??
         'https://api.openai.com/v1';
     asrModel = await repo.getSetting(SettingsKeys.asrModel) ?? 'whisper-1';
+    budgetDeposit =
+        double.tryParse(await repo.getSetting(SettingsKeys.budgetDeposit) ?? '') ??
+            0;
+    budgetSpent =
+        double.tryParse(await repo.getSetting(SettingsKeys.budgetSpent) ?? '') ??
+            0;
   }
 
   Future<void> refresh() async {
@@ -212,6 +233,35 @@ class AppState extends ChangeNotifier {
     retentionAudioDays = days;
     await repo.setSetting(SettingsKeys.retentionAudioDays, days.toString());
     await repo.applyAudioRetention(days);
+    notifyListeners();
+  }
+
+  // ---- Prepaid spend budget ------------------------------------------------
+
+  /// Top up the deposit (a manual prepaid amount — no payment processor; in the
+  /// bring-your-own-key model the user pays their providers directly).
+  Future<void> addDeposit(double usd) async {
+    if (usd <= 0) return;
+    budgetDeposit += usd;
+    await repo.setSetting(
+        SettingsKeys.budgetDeposit, budgetDeposit.toString());
+    notifyListeners();
+  }
+
+  /// Draw down the budget by an estimated session cost.
+  Future<void> recordSpend(double usd) async {
+    if (usd <= 0 || !budgetEnabled) return;
+    budgetSpent += usd;
+    await repo.setSetting(SettingsKeys.budgetSpent, budgetSpent.toString());
+    notifyListeners();
+  }
+
+  /// Clear the budget entirely (deposit and spend back to zero).
+  Future<void> resetBudget() async {
+    budgetDeposit = 0;
+    budgetSpent = 0;
+    await repo.setSetting(SettingsKeys.budgetDeposit, '0');
+    await repo.setSetting(SettingsKeys.budgetSpent, '0');
     notifyListeners();
   }
 

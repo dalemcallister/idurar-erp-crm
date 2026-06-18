@@ -90,6 +90,33 @@ class _NewSessionScreenState extends State<NewSessionScreen> {
 
   Future<void> _start() async {
     final state = context.read<AppState>();
+
+    // Prepaid budget gate (F-MOD-06): block when the deposit is used up.
+    if (state.budgetExhausted) {
+      final topUp = await showDialog<bool>(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text('Top up to keep recording'),
+          content: const Text(
+              'Your prepaid budget is used up. Top up your deposit in '
+              'Settings → Spending budget to record another session.'),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Not now')),
+            FilledButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Go to Settings')),
+          ],
+        ),
+      );
+      if (topUp == true && mounted) {
+        // Pop back so the user can reach the Settings tab.
+        Navigator.of(context).pop();
+      }
+      return;
+    }
+
     final goal = _goal!;
     final session = Session(
       id: 'sess-${_uuid.v4()}',

@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../core/app_state.dart';
 import '../core/consent_scripts.dart';
+import '../core/pricing.dart';
 import '../data/models/provider_config.dart';
 import '../llm/llm_provider.dart';
 
@@ -22,6 +23,9 @@ class SettingsScreen extends StatelessWidget {
         children: [
           _SectionHeader('Model & provider', Icons.smart_toy_outlined),
           const _ProviderSection(),
+          const SizedBox(height: 24),
+          _SectionHeader('Spending budget', Icons.account_balance_wallet_outlined),
+          _BudgetSection(state: state),
           const SizedBox(height: 24),
           _SectionHeader('Transcription engine', Icons.transcribe_outlined),
           _TranscriptionSection(state: state),
@@ -227,6 +231,206 @@ class _ProviderTile extends StatelessWidget {
               result.ok ? const Color(0xFF2E7D5B) : const Color(0xFFB44A3F),
         ),
       );
+    }
+  }
+}
+
+/// Prepaid spend budget (F-MOD-06). The user tops up a deposit and each
+/// analysed session draws its estimated cost down until a top-up is needed.
+/// There is no payment processor — in the bring-your-own-key model the user
+/// pays their providers directly; this is a personal spend meter.
+class _BudgetSection extends StatelessWidget {
+  final AppState state;
+  const _BudgetSection({required this.state});
+
+  @override
+  Widget build(BuildContext context) {
+    if (!state.budgetEnabled) {
+      return Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('No prepaid budget set',
+                  style: TextStyle(fontWeight: FontWeight.w500)),
+              const SizedBox(height: 4),
+              const Text(
+                'Set a deposit to cap your spend. Each analysed session draws '
+                'down its estimated provider cost; recording is paused when the '
+                'deposit runs out until you top up.',
+                style: TextStyle(fontSize: 12, color: Colors.black54),
+              ),
+              const SizedBox(height: 12),
+              FilledButton.icon(
+                onPressed: () => _addDeposit(context),
+                icon: const Icon(Icons.add_card),
+                label: const Text('Set a deposit'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final remaining = state.budgetRemaining;
+    final fraction =
+        state.budgetDeposit == 0 ? 0.0 : (remaining / state.budgetDeposit);
+    final Color barColor = state.budgetExhausted
+        ? const Color(0xFFB44A3F)
+        : state.budgetLow
+            ? const Color(0xFFD98E2B)
+            : const Color(0xFF2E7D5B);
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Text('Remaining',
+                    style: TextStyle(fontWeight: FontWeight.w500)),
+                const Spacer(),
+                Text(
+                  Pricing.formatUsd(remaining),
+                  style: TextStyle(
+                      fontWeight: FontWeight.w700, fontSize: 18, color: barColor),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: LinearProgressIndicator(
+                value: fraction.clamp(0.0, 1.0),
+                minHeight: 10,
+                backgroundColor: Colors.black12,
+                valueColor: AlwaysStoppedAnimation(barColor),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Spent ${Pricing.formatUsd(state.budgetSpent)} of '
+              '${Pricing.formatUsd(state.budgetDeposit)} deposited',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            if (state.budgetExhausted)
+              const Padding(
+                padding: EdgeInsets.only(top: 8),
+                child: Text(
+                  'Budget used up — top up to record another session.',
+                  style: TextStyle(
+                      fontSize: 12,
+                      color: Color(0xFFB44A3F),
+                      fontWeight: FontWeight.w500),
+                ),
+              )
+            else if (state.budgetLow)
+              const Padding(
+                padding: EdgeInsets.only(top: 8),
+                child: Text(
+                  'Running low — consider topping up soon.',
+                  style: TextStyle(fontSize: 12, color: Color(0xFFD98E2B)),
+                ),
+              ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                FilledButton.icon(
+                  onPressed: () => _addDeposit(context),
+                  icon: const Icon(Icons.add_card),
+                  label: const Text('Top up'),
+                ),
+                const Spacer(),
+                TextButton(
+                  onPressed: () => _confirmReset(context),
+                  child: const Text('Reset'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _addDeposit(BuildContext context) async {
+    final controller = TextEditingController();
+    final amount = await showDialog<double>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: Text(state.budgetEnabled ? 'Top up deposit' : 'Set a deposit'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: controller,
+              autofocus: true,
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(
+                prefixText: '\$',
+                hintText: '10.00',
+                labelText: 'Amount (USD)',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'A personal prepaid cap. Each analysed session draws down its '
+              'estimated provider cost. No payment is taken — you pay your '
+              'providers directly.',
+              style: TextStyle(fontSize: 12, color: Colors.black54),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () =>
+                Navigator.pop(context, double.tryParse(controller.text.trim())),
+            child: const Text('Add'),
+          ),
+        ],
+      ),
+    );
+    if (amount != null && amount > 0) {
+      await state.addDeposit(amount);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Added ${Pricing.formatUsd(amount)} to your deposit.')));
+      }
+    }
+  }
+
+  Future<void> _confirmReset(BuildContext context) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Reset budget?'),
+        content: const Text(
+            'Clears the deposit and spend back to zero. The spend meter is '
+            'turned off until you set a new deposit.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Reset')),
+        ],
+      ),
+    );
+    if (ok == true) {
+      await state.resetBudget();
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Budget reset.')));
+      }
     }
   }
 }

@@ -9,6 +9,7 @@ import 'package:uuid/uuid.dart';
 
 import '../audio/audio_capture.dart';
 import '../core/app_state.dart';
+import '../core/pricing.dart';
 import '../data/models/session.dart';
 import 'session_detail_screen.dart';
 
@@ -131,7 +132,7 @@ class _LiveRecordingScreenState extends State<LiveRecordingScreen> {
         return;
       }
       final engine = await state.transcriptionEngine();
-      await state.orchestrator.run(
+      final analysis = await state.orchestrator.run(
         session: session,
         goal: goal,
         rubric: rubric,
@@ -139,6 +140,10 @@ class _LiveRecordingScreenState extends State<LiveRecordingScreen> {
         providerConfig: state.preferredProvider,
         audioPath: audioPath,
       );
+      // Draw the estimated cost down from the prepaid budget (F-MOD-06).
+      final cost = Pricing.estimateCost(
+          analysis.modelUsed, analysis.inputTokens, analysis.outputTokens);
+      if (cost != null) await state.recordSpend(cost);
     } catch (e, st) {
       debugPrint('[PIPELINE] FAILED for ${session.id}: $e\n$st');
       await state.repo.updateSessionStatus(session.id, SessionStatus.failed);
