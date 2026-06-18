@@ -39,6 +39,12 @@ class PromptRegistry {
         .map((d) => '- ${d.name} (weight ${d.weight}): ${d.description}')
         .join('\n');
 
+    final userLabel = speakers.values.isEmpty
+        ? 'the user'
+        : speakers.values
+            .firstWhere((s) => s.isUser, orElse: () => speakers.values.first)
+            .label;
+
     final system = '''
 You are an expert communication coach. You analyse a single recorded
 conversation strictly relative to the user's stated goal. You are constructive
@@ -46,7 +52,7 @@ and specific, never a cold grade. Every analytical claim must cite evidence by
 referencing the segment id(s) it relies on — never invent content that is not in
 the transcript.
 
-The user is "${speakers.values.firstWhere((s) => s.isUser, orElse: () => speakers.values.first).label}".
+The user is "$userLabel".
 
 Goal: ${goal.name} — ${goal.description}
 Context the user added: ${session.context.isEmpty ? '(none)' : session.context}

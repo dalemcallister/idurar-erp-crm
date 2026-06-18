@@ -271,8 +271,8 @@ class _ProcessingState extends StatelessWidget {
               Icon(Icons.error_outline, size: 48, color: Color(0xFFB44A3F)),
               SizedBox(height: 16),
               Text(
-                'Analysis failed. Check your model/provider settings and try '
-                'recording again.',
+                "Analysis couldn't complete. Make sure the recording captured "
+                'speech and your provider keys are set, then record again.',
                 textAlign: TextAlign.center,
               ),
             ],

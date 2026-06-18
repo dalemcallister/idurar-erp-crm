@@ -52,6 +52,14 @@ class AnalysisOrchestrator {
       languages: [session.language],
     );
 
+    // No speech captured (e.g. a silent/empty recording) — fail clearly rather
+    // than running a doomed analysis on an empty transcript.
+    if (transcript.turns.where((t) => t.text.trim().isNotEmpty).isEmpty) {
+      throw const LLMException(
+          'No speech was detected in the recording. Check that the microphone '
+          'captured audio, then record again.');
+    }
+
     // 3. Segment + persist speakers. Speaker tags map to Speaker rows; the user
     //    can rename them later (F-TRA-05).
     final speakers = await _ensureSpeakers(session.id, transcript);
