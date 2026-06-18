@@ -47,5 +47,20 @@ dev_dependencies:
     sdk: flutter
   flutter_lints: ^4.0.0
 
+  # Generates the iOS/Android launcher icons from a single source image.
+  flutter_launcher_icons: ^0.14.1
+
 flutter:
   uses-material-design: true
+
+# Branded launcher icon (placeholder mark — a teal speech bubble + waveform).
+# Regenerate after changing the source image with:
+#   flutter pub get && dart run flutter_launcher_icons
+flutter_launcher_icons:
+  image_path: "assets/icon/app_icon.png"
+  android: true
+  ios: true
+  remove_alpha_ios: true
+  # Android adaptive icon: brand-dark background + the glyph as the foreground.
+  adaptive_icon_background: "#1C2422"
+  adaptive_icon_foreground: "assets/icon/app_icon_foreground.png"
