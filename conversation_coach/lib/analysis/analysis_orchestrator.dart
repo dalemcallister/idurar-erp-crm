@@ -1,6 +1,5 @@
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 
 import '../audio/feature_extractor.dart';
@@ -46,15 +45,12 @@ class AnalysisOrchestrator {
     required ProviderConfig providerConfig,
     required String audioPath,
   }) async {
-    debugPrint('[PIPELINE] start session=${session.id} '
-        'engine=${transcriptionEngine.id} audio=$audioPath');
     // 2. ASR + diarize -> timestamped, speaker-tagged transcript.
     await repo.updateSessionStatus(session.id, SessionStatus.transcribing);
     final transcript = await transcriptionEngine.transcribe(
       audioPath: audioPath,
       languages: [session.language],
     );
-    debugPrint('[PIPELINE] transcript turns=${transcript.turns.length}');
 
     // 3. Segment + persist speakers. Speaker tags map to Speaker rows; the user
     //    can rename them later (F-TRA-05).
@@ -88,11 +84,7 @@ class AnalysisOrchestrator {
       modelOverride: providerConfig.perTaskOverrides['analysis'],
     );
 
-    debugPrint('[PIPELINE] provider=${provider.displayName} '
-        'segments=${segments.length}');
     final response = await _completeWithRetry(provider, request);
-    debugPrint('[PIPELINE] model=${response.modelUsed} '
-        'responseLen=${response.text.length}');
     final parsed = _parseJson(response.text);
 
     // 6. Aggregate + 7. Recommend.
@@ -104,9 +96,6 @@ class AnalysisOrchestrator {
       modelUsed: response.modelUsed,
     );
     await repo.upsertAnalysis(analysis);
-    final reread = await repo.analysisForSession(session.id);
-    debugPrint('[PIPELINE] saved analysis=${analysis.id} '
-        'reread=${reread?.id ?? "NULL"}');
 
     final recs = _buildRecommendations(session.id, parsed);
     await repo.replaceRecommendations(session.id, recs);

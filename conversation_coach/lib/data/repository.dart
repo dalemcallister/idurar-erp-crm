@@ -1,6 +1,5 @@
 import 'dart:io';
 
-import 'package:flutter/foundation.dart';
 import 'package:sqflite_sqlcipher/sqflite.dart';
 
 import 'database.dart';
@@ -57,11 +56,21 @@ class Repository {
 
   // ---- Sessions ------------------------------------------------------------
 
-  Future<void> upsertSession(Session s) => _db.insert(
-        'sessions',
-        s.toMap(),
-        conflictAlgorithm: ConflictAlgorithm.replace,
-      );
+  /// Upserts a session WITHOUT INSERT-OR-REPLACE. `ConflictAlgorithm.replace`
+  /// is a DELETE+INSERT, which (with foreign_keys ON) cascades and wipes every
+  /// child row — analysis, segments, recommendations, etc. Update in place so
+  /// the session's children survive a status change.
+  Future<void> upsertSession(Session s) async {
+    final updated = await _db.update(
+      'sessions',
+      s.toMap(),
+      where: 'id = ?',
+      whereArgs: [s.id],
+    );
+    if (updated == 0) {
+      await _db.insert('sessions', s.toMap());
+    }
+  }
 
   Future<Session?> session(String id) async {
     final rows = await _db.query('sessions', where: 'id = ?', whereArgs: [id]);
@@ -152,14 +161,7 @@ class Repository {
         whereArgs: [sessionId],
         orderBy: 'createdAt DESC',
         limit: 1);
-    debugPrint('[REPO] analysisForSession($sessionId) rows=${rows.length}');
-    if (rows.isEmpty) return null;
-    try {
-      return Analysis.fromMap(rows.first);
-    } catch (e, st) {
-      debugPrint('[REPO] Analysis.fromMap FAILED: $e\n$st');
-      rethrow;
-    }
+    return rows.isEmpty ? null : Analysis.fromMap(rows.first);
   }
 
   Future<List<Analysis>> allAnalyses() async =>
