@@ -245,19 +245,101 @@ class _TranscriptionSection extends StatelessWidget {
             groupValue: state.transcriptionEngineKind,
             onChanged: (v) => state.setTranscriptionEngine(v!),
             title: const Text('On-device demo (private, offline)'),
-            subtitle: const Text('No audio leaves your device.'),
+            subtitle: const Text(
+                'Uses a sample transcript — does not transcribe your audio.'),
           ),
           RadioListTile<String>(
             value: 'cloud',
             groupValue: state.transcriptionEngineKind,
             onChanged: (v) => state.setTranscriptionEngine(v!),
-            title: const Text('Cloud (higher accuracy, diarization)'),
+            title: const Text('Cloud — Whisper (transcribes your recording)'),
             subtitle: const Text(
-                'Audio is sent to your configured provider — opt-in.'),
+                'Audio is sent to OpenAI Whisper — opt-in. Needs an OpenAI key.'),
           ),
+          if (state.transcriptionEngineKind == 'cloud') _asrKeyRow(context),
         ],
       ),
     );
+  }
+
+  Widget _asrKeyRow(BuildContext context) {
+    return FutureBuilder<bool>(
+      future: state.hasAsrKey(),
+      builder: (context, snap) {
+        final hasKey = snap.data ?? false;
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 8, 12),
+          child: Row(
+            children: [
+              Icon(hasKey ? Icons.key : Icons.key_off,
+                  size: 16,
+                  color: hasKey
+                      ? const Color(0xFF2E7D5B)
+                      : const Color(0xFFB44A3F)),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  hasKey
+                      ? 'OpenAI key set · ${state.asrModel}'
+                      : 'No OpenAI key — will use the demo transcript until set',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ),
+              TextButton(
+                onPressed: () => _editAsrKey(context),
+                child: Text(hasKey ? 'Update key' : 'Add key'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _editAsrKey(BuildContext context) async {
+    final controller = TextEditingController();
+    final key = await showDialog<String>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('OpenAI API key (Whisper)'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: controller,
+              autofocus: true,
+              obscureText: true,
+              decoration: const InputDecoration(
+                hintText: 'sk-…',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Used only to transcribe your recording via OpenAI Whisper. '
+              'Stored in the OS keystore, never in plaintext. Separate from '
+              'your Anthropic analysis key.',
+              style: TextStyle(fontSize: 12, color: Colors.black54),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(context, controller.text.trim()),
+              child: const Text('Save')),
+        ],
+      ),
+    );
+    if (key != null && key.isNotEmpty) {
+      await state.setAsrKey(key);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('OpenAI key saved — cloud transcription is on.')));
+      }
+    }
   }
 }
 

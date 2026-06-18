@@ -22,6 +22,12 @@ class SettingsKeys {
   static const language = 'language';
   static const transcriptionEngine = 'transcriptionEngine'; // cloud|demo
   static const retentionAudioDays = 'retentionAudioDays';
+  static const asrEndpoint = 'asrEndpoint';
+  static const asrModel = 'asrModel';
+
+  /// Keystore handle for the speech-to-text (ASR) provider key — separate from
+  /// the analysis provider's key, since transcription uses a different service.
+  static const asrKeyRef = 'asr_api_key';
 }
 
 /// Central application state and service wiring (a lightweight service locator
@@ -49,6 +55,11 @@ class AppState extends ChangeNotifier {
   String language = 'en';
   String transcriptionEngineKind = 'demo'; // 'cloud' | 'demo'
   int retentionAudioDays = 30;
+
+  /// Speech-to-text (Whisper-compatible) provider used when the cloud engine
+  /// is selected. Defaults to OpenAI Whisper.
+  String asrEndpoint = 'https://api.openai.com/v1';
+  String asrModel = 'whisper-1';
 
   /// Id of the provider the user prefers (remembered across fallbacks).
   String preferredProviderId = ProviderConfig.defaultClaude().id;
@@ -103,6 +114,9 @@ class AppState extends ChangeNotifier {
     retentionAudioDays = int.tryParse(
             await repo.getSetting(SettingsKeys.retentionAudioDays) ?? '30') ??
         30;
+    asrEndpoint = await repo.getSetting(SettingsKeys.asrEndpoint) ??
+        'https://api.openai.com/v1';
+    asrModel = await repo.getSetting(SettingsKeys.asrModel) ?? 'whisper-1';
   }
 
   Future<void> refresh() async {
@@ -201,18 +215,49 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ---- ASR (speech-to-text) provider --------------------------------------
+
+  Future<void> setAsrEndpoint(String url) async {
+    asrEndpoint = url;
+    await repo.setSetting(SettingsKeys.asrEndpoint, url);
+    notifyListeners();
+  }
+
+  Future<void> setAsrModel(String model) async {
+    asrModel = model;
+    await repo.setSetting(SettingsKeys.asrModel, model);
+    notifyListeners();
+  }
+
+  Future<void> setAsrKey(String key) async {
+    await keystore.write(SettingsKeys.asrKeyRef, key);
+    notifyListeners();
+  }
+
+  Future<void> clearAsrKey() async {
+    await keystore.delete(SettingsKeys.asrKeyRef);
+    notifyListeners();
+  }
+
+  Future<bool> hasAsrKey() => keystore.has(SettingsKeys.asrKeyRef);
+
+  /// True when cloud transcription is selected but no ASR key is set — so the
+  /// app will fall back to the offline demo transcript.
+  Future<bool> cloudTranscriptionUnconfigured() async =>
+      transcriptionEngineKind == 'cloud' && !(await hasAsrKey());
+
   /// Builds the transcription engine for the current setting. The cloud engine
-  /// only sends audio when the user has opted in and configured a provider.
+  /// only sends audio when the user has opted in AND configured an ASR key;
+  /// otherwise it falls back to the offline demo transcript.
   Future<TranscriptionEngine> transcriptionEngine() async {
     if (transcriptionEngineKind == 'cloud') {
-      final p = preferredProvider;
-      final key = p.apiKeyRef == null ? null : await keystore.read(p.apiKeyRef!);
+      final key = await keystore.read(SettingsKeys.asrKeyRef);
       if ((key ?? '').isNotEmpty) {
         return CloudTranscriptionEngine(
-          endpointUrl: p.endpointUrl.isEmpty
-              ? 'https://api.openai.com/v1'
-              : p.endpointUrl,
+          endpointUrl:
+              asrEndpoint.isEmpty ? 'https://api.openai.com/v1' : asrEndpoint,
           apiKey: key,
+          model: asrModel.isEmpty ? 'whisper-1' : asrModel,
         );
       }
     }

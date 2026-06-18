@@ -65,18 +65,32 @@ class CloudTranscriptionEngine implements TranscriptionEngine {
     final turns = <TranscriptTurn>[];
     for (final s in segments) {
       final m = s as Map<String, dynamic>;
-      // Without true diarization, alternate speaker tags as a best effort;
+      final text = (m['text'] as String? ?? '').trim();
+      if (text.isEmpty) continue;
+      // Without true diarization Whisper attributes everything to one speaker;
       // hardware channel separation (F-TRA-03) refines this upstream.
       turns.add(TranscriptTurn(
         startMs: (((m['start'] as num?)?.toDouble() ?? 0) * 1000).round(),
         endMs: (((m['end'] as num?)?.toDouble() ?? 0) * 1000).round(),
         speakerTag: 'S1',
-        text: (m['text'] as String? ?? '').trim(),
+        text: text,
       ));
     }
+
+    // Fallback: a provider that returns only a flat "text" field (no segment
+    // timestamps) still yields one usable turn.
+    if (turns.isEmpty) {
+      final text = (j['text'] as String? ?? '').trim();
+      if (text.isNotEmpty) {
+        turns.add(TranscriptTurn(
+            startMs: 0, endMs: 0, speakerTag: 'S1', text: text));
+      }
+    }
+
     return TranscriptionResult(
       turns: turns,
-      language: (j['language'] as String?) ?? (languages.isEmpty ? 'en' : languages.first),
+      language: (j['language'] as String?) ??
+          (languages.isEmpty ? 'en' : languages.first),
     );
   }
 }
