@@ -17,17 +17,19 @@ class RootShell extends StatefulWidget {
 class _RootShellState extends State<RootShell> {
   int _index = 0;
 
-  static const _tabs = [
-    HomeScreen(),
-    SessionsListScreen(),
-    ProgressScreen(),
-    SettingsScreen(),
-  ];
-
   @override
   Widget build(BuildContext context) {
+    // Render the selected tab directly (not via IndexedStack) so each screen
+    // rebuilds — and re-queries — every time it's shown. Otherwise the Sessions
+    // and Progress lists keep a stale snapshot from app start.
+    const tabs = [
+      HomeScreen(),
+      SessionsListScreen(),
+      ProgressScreen(),
+      SettingsScreen(),
+    ];
     return Scaffold(
-      body: IndexedStack(index: _index, children: _tabs),
+      body: tabs[_index],
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index,
         onDestinationSelected: (i) => setState(() => _index = i),
