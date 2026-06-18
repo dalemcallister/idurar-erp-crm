@@ -37,12 +37,23 @@ class AppDatabase {
     _db = await openDatabase(
       path,
       password: key, // SQLCipher encryption key
-      version: 1,
+      version: 2,
       onConfigure: (db) async {
         await db.execute('PRAGMA foreign_keys = ON');
       },
       onCreate: _createSchema,
+      onUpgrade: _migrate,
     );
+  }
+
+  Future<void> _migrate(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      // F-MOD-06 — per-session token accounting.
+      await db.execute(
+          'ALTER TABLE analyses ADD COLUMN inputTokens INTEGER NOT NULL DEFAULT 0');
+      await db.execute(
+          'ALTER TABLE analyses ADD COLUMN outputTokens INTEGER NOT NULL DEFAULT 0');
+    }
   }
 
   Future<void> _createSchema(Database db, int version) async {
@@ -141,6 +152,8 @@ class AppDatabase {
         modelUsed TEXT,
         promptVersion TEXT,
         createdAt INTEGER NOT NULL,
+        inputTokens INTEGER NOT NULL DEFAULT 0,
+        outputTokens INTEGER NOT NULL DEFAULT 0,
         FOREIGN KEY(sessionId) REFERENCES sessions(id) ON DELETE CASCADE
       )''');
 

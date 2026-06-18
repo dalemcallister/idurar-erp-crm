@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../core/pricing.dart';
 import '../core/theme.dart';
 import '../data/models/analysis.dart';
 import '../data/models/session.dart';
@@ -31,6 +32,8 @@ class SummaryView extends StatelessWidget {
                 ?.copyWith(height: 1.3, fontWeight: FontWeight.w600)),
         const SizedBox(height: 16),
         _ScoreCard(analysis: analysis),
+        if (analysis.inputTokens > 0 || analysis.outputTokens > 0)
+          _CostCard(analysis: analysis),
         const SizedBox(height: 8),
         _ListCard(
           title: 'Top strengths',
@@ -84,6 +87,54 @@ class SummaryView extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// Per-session token & cost meter (F-MOD-06). Shows the analysis call's token
+/// usage and an estimated cost for the model used.
+class _CostCard extends StatelessWidget {
+  final Analysis analysis;
+  const _CostCard({required this.analysis});
+
+  @override
+  Widget build(BuildContext context) {
+    final total = analysis.inputTokens + analysis.outputTokens;
+    final cost = Pricing.estimateCost(
+        analysis.modelUsed, analysis.inputTokens, analysis.outputTokens);
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            const Icon(Icons.savings_outlined, size: 20),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Analysis cost',
+                      style: TextStyle(fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 2),
+                  Text(
+                    '$total tokens · ${analysis.inputTokens} in / '
+                    '${analysis.outputTokens} out',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
+              ),
+            ),
+            Text(
+              cost == null ? '—' : Pricing.formatUsd(cost),
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Theme.of(context).colorScheme.primary,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

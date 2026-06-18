@@ -131,6 +131,11 @@ class Analysis {
   final String promptVersion;
   final DateTime createdAt;
 
+  /// Token accounting for the per-session cost meter (F-MOD-06). Zero for the
+  /// offline demo provider; real counts when a cloud model is used.
+  final int inputTokens;
+  final int outputTokens;
+
   const Analysis({
     required this.id,
     required this.sessionId,
@@ -149,6 +154,8 @@ class Analysis {
     required this.modelUsed,
     required this.promptVersion,
     required this.createdAt,
+    this.inputTokens = 0,
+    this.outputTokens = 0,
   });
 
   Map<String, dynamic> toMap() => {
@@ -171,6 +178,8 @@ class Analysis {
         'modelUsed': modelUsed,
         'promptVersion': promptVersion,
         'createdAt': createdAt.millisecondsSinceEpoch,
+        'inputTokens': inputTokens,
+        'outputTokens': outputTokens,
       };
 
   factory Analysis.fromMap(Map<String, dynamic> m) {
@@ -204,6 +213,8 @@ class Analysis {
       modelUsed: (m['modelUsed'] as String?) ?? '',
       promptVersion: (m['promptVersion'] as String?) ?? '',
       createdAt: DateTime.fromMillisecondsSinceEpoch(m['createdAt'] as int),
+      inputTokens: (m['inputTokens'] as int?) ?? 0,
+      outputTokens: (m['outputTokens'] as int?) ?? 0,
     );
   }
 }

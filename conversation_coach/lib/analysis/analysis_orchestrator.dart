@@ -94,6 +94,7 @@ class AnalysisOrchestrator {
       dynamics: dynamics,
       parsed: parsed,
       modelUsed: response.modelUsed,
+      usage: response.usage,
     );
     await repo.upsertAnalysis(analysis);
 
@@ -195,6 +196,7 @@ class AnalysisOrchestrator {
     required Dynamics dynamics,
     required Map<String, dynamic> parsed,
     required String modelUsed,
+    required TokenUsage usage,
   }) {
     List<String> strs(String key) =>
         ((parsed[key] as List?) ?? const []).map((e) => e.toString()).toList();
@@ -234,6 +236,8 @@ class AnalysisOrchestrator {
       modelUsed: modelUsed,
       promptVersion: PromptRegistry.version,
       createdAt: DateTime.now(),
+      inputTokens: usage.inputTokens,
+      outputTokens: usage.outputTokens,
     );
   }
 
