@@ -257,20 +257,26 @@ class _NewSessionScreenState extends State<NewSessionScreen> {
             title: const Text(
                 'Everyone present has agreed to be recorded.'),
           ),
-          const SizedBox(height: 8),
-          FilledButton.icon(
-            onPressed: _canStart ? _start : null,
-            icon: const Icon(Icons.fiber_manual_record),
-            label: const Text('Start recording'),
-          ),
-          const SizedBox(height: 8),
-          const Center(
-            child: Text(
+        ],
+      ),
+      bottomNavigationBar: SafeArea(
+        minimum: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            FilledButton.icon(
+              onPressed: _canStart ? _start : null,
+              icon: const Icon(Icons.fiber_manual_record),
+              label: const Text('Start recording'),
+            ),
+            const SizedBox(height: 6),
+            const Text(
               'Recording is never hidden — a clear indicator shows while live.',
               style: TextStyle(fontSize: 12, color: Colors.black54),
+              textAlign: TextAlign.center,
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
