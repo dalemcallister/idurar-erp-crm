@@ -1,0 +1,70 @@
+name: conversation_coach
+description: >-
+  Conversation Coach (ClariConvo) — a goal-aligned communication-coaching app.
+  Record a conversation over a USB-C mic, set a goal, and get an evidence-backed,
+  Claude-powered analysis with a per-session "ask the conversation" Q&A.
+publish_to: "none"
+version: 0.1.0+1
+
+environment:
+  sdk: ">=3.6.0 <4.0.0"
+  flutter: ">=3.27.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # State management
+  provider: ^6.1.2
+
+  # Local persistence — encrypted SQLite (SQLCipher) + encrypted key store.
+  sqflite_sqlcipher: ^3.1.0
+  sqflite_common: ^2.5.4
+  path: ^1.9.0
+  path_provider: ^2.1.3
+  flutter_secure_storage: ^9.2.2
+
+  # Audio capture (built-in + USB-C UAC input) and playback. 7.x keeps the
+  # federated sub-packages (incl. record_linux) version-aligned, avoiding the
+  # interface mismatch present in the 5.x line.
+  record: ^7.1.0
+  audioplayers: ^6.0.0
+
+  # Networking for the cloud model + transcription adapters (Anthropic Messages
+  # API is called over raw HTTP — there is no official Dart Anthropic SDK).
+  http: ^1.2.2
+
+  # Opens the device mail composer (mailto:) to send the follow-up / action
+  # steps email — no backend, the user's own mail client sends it.
+  url_launcher: ^6.3.0
+
+  # Charts for the progress trends and emotion timeline.
+  fl_chart: ^0.68.0
+
+  # Misc.
+  intl: ^0.19.0
+  uuid: ^4.4.0
+  collection: ^1.18.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+  # Generates the iOS/Android launcher icons from a single source image.
+  flutter_launcher_icons: ^0.14.1
+
+flutter:
+  uses-material-design: true
+
+# Branded launcher icon (placeholder mark — a teal speech bubble + waveform).
+# Regenerate after changing the source image with:
+#   flutter pub get && dart run flutter_launcher_icons
+flutter_launcher_icons:
+  image_path: "assets/icon/app_icon.png"
+  android: true
+  ios: true
+  remove_alpha_ios: true
+  # Android adaptive icon: brand-dark background + the glyph as the foreground.
+  adaptive_icon_background: "#1C2422"
+  adaptive_icon_foreground: "assets/icon/app_icon_foreground.png"

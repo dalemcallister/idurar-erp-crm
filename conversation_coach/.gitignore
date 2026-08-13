@@ -1,0 +1,23 @@
+# Flutter / Dart
+.dart_tool/
+.packages
+.pub-cache/
+.pub/
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+*.iml
+
+# IDE
+.idea/
+.vscode/
+
+# Generated platform ephemeral
+android/.gradle/
+ios/Pods/
+ios/.symlinks/
+**/Flutter/ephemeral/
+
+# Secrets — never commit API keys
+*.env
+secrets.dart
