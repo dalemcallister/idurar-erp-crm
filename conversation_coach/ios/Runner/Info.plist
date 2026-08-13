@@ -47,5 +47,11 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+
+	<!-- The app only uses standard HTTPS (TLS) to reach the model/ASR providers,
+	     which is exempt encryption. Declaring this lets TestFlight/App Store
+	     uploads skip the export-compliance questionnaire each time. -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 </dict>
 </plist>
