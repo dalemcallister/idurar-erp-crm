@@ -34,6 +34,10 @@ dependencies:
   # API is called over raw HTTP — there is no official Dart Anthropic SDK).
   http: ^1.2.2
 
+  # Opens the device mail composer (mailto:) to send the follow-up / action
+  # steps email — no backend, the user's own mail client sends it.
+  url_launcher: ^6.3.0
+
   # Charts for the progress trends and emotion timeline.
   fl_chart: ^0.68.0
 

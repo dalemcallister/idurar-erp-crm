@@ -44,4 +44,13 @@
             android:name="flutterEmbedding"
             android:value="2" />
     </application>
+
+    <!-- url_launcher: declare that we open the mail composer (Android 11+ needs
+         this to resolve mailto: intents). -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.SENDTO" />
+            <data android:scheme="mailto" />
+        </intent>
+    </queries>
 </manifest>

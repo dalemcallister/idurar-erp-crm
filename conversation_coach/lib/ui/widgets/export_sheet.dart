@@ -7,10 +7,12 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import '../../data/models/analysis.dart';
+import '../../data/models/goal.dart';
 import '../../data/models/recommendation.dart';
 import '../../data/models/segment.dart';
 import '../../data/models/session.dart';
 import '../../data/models/speaker.dart';
+import 'follow_up_email.dart';
 
 /// Export a session as a Markdown report plus transcript (F-DAT-01). The report
 /// can be copied to the clipboard or written to a file in the app documents
@@ -21,8 +23,9 @@ Future<void> showExportSheet(
   Analysis analysis,
   List<Segment> segments,
   Map<String, Speaker> speakers,
-  List<Recommendation> recommendations,
-) async {
+  List<Recommendation> recommendations, {
+  Goal? goal,
+}) async {
   final markdown = _buildMarkdown(
       session, analysis, segments, speakers, recommendations);
 
@@ -38,6 +41,15 @@ Future<void> showExportSheet(
             subtitle: Text('Markdown report + transcript'),
           ),
           const Divider(height: 1),
+          ListTile(
+            leading: const Icon(Icons.email_outlined),
+            title: const Text('Send action steps as email'),
+            subtitle: const Text('Opens your mail app with a follow-up draft'),
+            onTap: () {
+              Navigator.pop(ctx);
+              sendFollowUpEmail(context, session, analysis, goal);
+            },
+          ),
           ListTile(
             leading: const Icon(Icons.copy),
             title: const Text('Copy to clipboard'),
@@ -121,6 +133,13 @@ String _buildMarkdown(
       if (r.whatToTryInstead != null && r.whatToTryInstead!.isNotEmpty) {
         b.writeln('   - *Try instead:* "${r.whatToTryInstead}"');
       }
+    }
+    b.writeln();
+  }
+  if (a.nextSteps.isNotEmpty) {
+    b.writeln('## Your next steps');
+    for (var i = 0; i < a.nextSteps.length; i++) {
+      b.writeln('${i + 1}. ${a.nextSteps[i]}');
     }
     b.writeln();
   }

@@ -237,6 +237,7 @@ class AnalysisOrchestrator {
       openQuestions: strs('openQuestions'),
       strengths: strs('strengths'),
       improvements: strs('improvements'),
+      nextSteps: strs('nextSteps'),
       dynamics: dynamics,
       scoreOverall: overall.clamp(0, 100),
       scoreByDimension: dims,

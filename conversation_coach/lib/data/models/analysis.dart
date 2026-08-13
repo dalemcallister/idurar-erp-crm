@@ -123,6 +123,11 @@ class Analysis {
   final List<String> openQuestions;
   final List<String> strengths;
   final List<String> improvements;
+
+  /// Concrete, personal follow-up actions for the user after this conversation
+  /// (owner = the user) — the basis of the "Your next steps" card and the
+  /// follow-up email.
+  final List<String> nextSteps;
   final Dynamics dynamics;
   final double scoreOverall; // 0..100
   final List<DimensionScore> scoreByDimension;
@@ -147,6 +152,7 @@ class Analysis {
     this.openQuestions = const [],
     this.strengths = const [],
     this.improvements = const [],
+    this.nextSteps = const [],
     this.dynamics = const Dynamics(),
     required this.scoreOverall,
     this.scoreByDimension = const [],
@@ -169,6 +175,7 @@ class Analysis {
         'openQuestionsJson': jsonEncode(openQuestions),
         'strengthsJson': jsonEncode(strengths),
         'improvementsJson': jsonEncode(improvements),
+        'nextStepsJson': jsonEncode(nextSteps),
         'dynamicsJson': jsonEncode(dynamics.toJson()),
         'scoreOverall': scoreOverall,
         'scoreByDimensionJson':
@@ -198,6 +205,7 @@ class Analysis {
       openQuestions: strs('openQuestionsJson'),
       strengths: strs('strengthsJson'),
       improvements: strs('improvementsJson'),
+      nextSteps: strs('nextStepsJson'),
       dynamics: Dynamics.fromJson(
           jsonDecode((m['dynamicsJson'] as String?) ?? '{}')
               as Map<String, dynamic>),

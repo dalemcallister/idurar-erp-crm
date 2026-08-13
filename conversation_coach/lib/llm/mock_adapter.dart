@@ -84,6 +84,7 @@ class MockAdapter implements LLMProvider {
         'openQuestions': <String>[],
         'strengths': <String>[],
         'improvements': <String>[],
+        'nextSteps': <String>[],
         'scoreOverall': 0,
         'scoreByDimension': <dynamic>[],
         'recommendations': <dynamic>[],
@@ -152,6 +153,14 @@ class MockAdapter implements LLMProvider {
           'Address the buying/timeline signal sooner',
         'Confirm next steps explicitly before closing',
       ].take(3).toList(),
+      'nextSteps': [
+        'Send ${speakers.length > 1 ? speakers[1] : 'the other party'} a short recap of what was discussed and agreed.',
+        if (buyingSegs.isNotEmpty)
+          'Follow up on ${_short(buyingSegs.first.text)} with concrete detail or a proposal.',
+        if (questionSegs.isNotEmpty)
+          'Answer the open question${questionSegs.length == 1 ? '' : 's'} raised: ${questionSegs.take(2).map((l) => '"${_short(l.text)}"').join('; ')}.',
+        'Propose a specific next step with a date and confirm it back.',
+      ].take(6).toList(),
       'scoreOverall': overall,
       'scoreByDimension': _dimensions(userShare, questionSegs, lines, ev),
       'recommendations': _recommendations(

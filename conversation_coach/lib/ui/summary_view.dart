@@ -3,8 +3,10 @@ import 'package:flutter/material.dart';
 import '../core/pricing.dart';
 import '../core/theme.dart';
 import '../data/models/analysis.dart';
+import '../data/models/goal.dart';
 import '../data/models/session.dart';
 import '../data/models/speaker.dart';
+import 'widgets/follow_up_email.dart';
 
 /// Session detail — summary (Design §6.3). Opens on the headline, then the goal
 /// score, top strengths and improvements. Numbers support the narrative.
@@ -12,12 +14,14 @@ class SummaryView extends StatelessWidget {
   final Session session;
   final Analysis analysis;
   final Map<String, Speaker> speakers;
+  final Goal? goal;
 
   const SummaryView({
     super.key,
     required this.session,
     required this.analysis,
     required this.speakers,
+    this.goal,
   });
 
   @override
@@ -35,6 +39,7 @@ class SummaryView extends StatelessWidget {
         if (analysis.inputTokens > 0 || analysis.outputTokens > 0)
           _CostCard(analysis: analysis),
         const SizedBox(height: 8),
+        _NextStepsCard(session: session, analysis: analysis, goal: goal),
         _ListCard(
           title: 'Top strengths',
           icon: Icons.thumb_up_alt_outlined,
@@ -87,6 +92,90 @@ class SummaryView extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// "Your next steps" — the concrete follow-up actions for the user after the
+/// conversation, with a one-tap button to send them as an email from the
+/// device's own mail app (no backend).
+class _NextStepsCard extends StatelessWidget {
+  final Session session;
+  final Analysis analysis;
+  final Goal? goal;
+  const _NextStepsCard({
+    required this.session,
+    required this.analysis,
+    required this.goal,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    // Prefer the tailored next steps; fall back to raw action items so the card
+    // still appears when a model only returned action items.
+    final steps = analysis.nextSteps.isNotEmpty
+        ? analysis.nextSteps
+        : analysis.actionItems;
+    if (steps.isEmpty) return const SizedBox.shrink();
+
+    final primary = Theme.of(context).colorScheme.primary;
+    return Card(
+      color: const Color(0xFFF0F5F4),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(children: [
+              Icon(Icons.checklist_rtl, size: 18, color: primary),
+              const SizedBox(width: 8),
+              const Text('Your next steps',
+                  style: TextStyle(fontWeight: FontWeight.w700)),
+            ]),
+            const SizedBox(height: 4),
+            const Text(
+              'Recommended actions to follow up on this conversation.',
+              style: TextStyle(fontSize: 12, color: Colors.black54),
+            ),
+            const SizedBox(height: 10),
+            for (var i = 0; i < steps.length; i++)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: 22,
+                      height: 22,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: primary.withValues(alpha: 0.15),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Text('${i + 1}',
+                          style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: primary)),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(child: Text(steps[i])),
+                  ],
+                ),
+              ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: () =>
+                    sendFollowUpEmail(context, session, analysis, goal),
+                icon: const Icon(Icons.email_outlined),
+                label: const Text('Email these steps'),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

@@ -37,7 +37,7 @@ class AppDatabase {
     _db = await openDatabase(
       path,
       password: key, // SQLCipher encryption key
-      version: 2,
+      version: 3,
       onConfigure: (db) async {
         await db.execute('PRAGMA foreign_keys = ON');
       },
@@ -53,6 +53,10 @@ class AppDatabase {
           'ALTER TABLE analyses ADD COLUMN inputTokens INTEGER NOT NULL DEFAULT 0');
       await db.execute(
           'ALTER TABLE analyses ADD COLUMN outputTokens INTEGER NOT NULL DEFAULT 0');
+    }
+    if (oldVersion < 3) {
+      // "Your next steps" — personal follow-up actions + the follow-up email.
+      await db.execute('ALTER TABLE analyses ADD COLUMN nextStepsJson TEXT');
     }
   }
 
@@ -145,6 +149,7 @@ class AppDatabase {
         openQuestionsJson TEXT,
         strengthsJson TEXT,
         improvementsJson TEXT,
+        nextStepsJson TEXT,
         dynamicsJson TEXT,
         scoreOverall REAL NOT NULL DEFAULT 0,
         scoreByDimensionJson TEXT,

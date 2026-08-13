@@ -8,7 +8,7 @@ import 'llm_provider.dart';
 /// with a strict expected output schema, so results stay consistent across
 /// very different models (Tech Spec §5).
 class PromptRegistry {
-  static const String version = 'v1';
+  static const String version = 'v2';
 
   /// Renders the transcript in a stable, parseable form. Each line carries its
   /// timestamp and segment id so the model can cite evidence by id, and the
@@ -70,6 +70,7 @@ Return JSON with exactly these keys:
   "openQuestions": string[],
   "strengths": string[] (top 3),
   "improvements": string[] (top 3),
+  "nextSteps": string[] (3-6 concrete follow-up actions the user should take AFTER this conversation to move the goal forward — written to the user in the imperative, specific and self-contained, time-bound where the transcript supports it, e.g. "Email $userLabel a one-page recap of the agreed scope by Friday"),
   "scoreOverall": number (0-100),
   "scoreByDimension": [ { "dimension": string, "score": number, "rationale": string, "evidenceSegmentIds": string[] } ],
   "recommendations": [ { "priority": number, "text": string, "evidenceRefs": string[], "whatToTryInstead": string|null } ],

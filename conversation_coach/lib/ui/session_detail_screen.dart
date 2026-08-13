@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 
 import '../core/app_state.dart';
 import '../data/models/analysis.dart';
+import '../data/models/goal.dart';
 import '../data/models/recommendation.dart';
 import '../data/models/recording.dart';
 import '../data/models/segment.dart';
@@ -33,6 +34,7 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
   final _player = AudioPlayer();
 
   Session? _session;
+  Goal? _goal;
   Analysis? _analysis;
   List<Segment> _segments = [];
   Map<String, Speaker> _speakers = {};
@@ -56,6 +58,8 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
     if (!mounted) return;
     setState(() => _session = session);
     if (session == null) return;
+    final goal = await state.repo.goal(session.goalId);
+    if (mounted) setState(() => _goal = goal);
 
     try {
       final analysis = await state.repo.analysisForSession(widget.sessionId);
@@ -160,7 +164,8 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                 tooltip: 'Export',
                 onPressed: () => showExportSheet(
                     context, session, _analysis!, _segments, _speakers,
-                    _recommendations),
+                    _recommendations,
+                    goal: _goal),
               ),
             IconButton(
               icon: const Icon(Icons.delete_outline),
@@ -185,7 +190,8 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
                   SummaryView(
                       session: session,
                       analysis: _analysis!,
-                      speakers: _speakers),
+                      speakers: _speakers,
+                      goal: _goal),
                   TranscriptView(
                     session: session,
                     segments: _segments,
