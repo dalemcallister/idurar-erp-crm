@@ -19,7 +19,7 @@ class LocalGemmaAdapter implements LLMProvider {
   String get id => config.id;
 
   @override
-  String get displayName => 'On-device (Gemma)';
+  String get displayName => 'On-device (Gemma 4 E2B)';
 
   @override
   LLMCapabilities get capabilities =>
@@ -29,8 +29,8 @@ class LocalGemmaAdapter implements LLMProvider {
   Future<List<LLMModel>> listModels() async => const [
         LLMModel(
             id: LocalModels.gemmaModelId,
-            displayName: 'Gemma 3 1B (on-device)',
-            contextWindow: 2048),
+            displayName: 'Gemma 4 E2B (on-device)',
+            contextWindow: 4096),
       ];
 
   @override

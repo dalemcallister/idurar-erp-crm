@@ -25,15 +25,16 @@ class LocalModels {
   /// The on-device analysis model. Gemma 3 1B (~0.5 GB) is the size/quality
   /// sweet spot for a phone; swap the URL/type to trade up (e.g. Gemma3n E2B)
   /// or down (Qwen3 0.6B). LiteRT-LM `.litertlm` format.
-  static const String gemmaModelId = 'gemma3-1b-it';
+  static const String gemmaModelId = 'gemma-4-e2b-it';
 
-  /// Default download URL for the analysis model — a portable 4-bit,
-  /// 4096-context LiteRT-LM build of Gemma 3 1B. Override the exact filename at
-  /// build time with `--dart-define=GEMMA_MODEL_URL=<resolve/main/... url>`
-  /// (use the `/resolve/main/` form, not `/blob/main/`) without a code change.
+  /// Default download URL for the analysis model — the portable (no chipset
+  /// suffix, non-web) LiteRT-LM build of Gemma 4 E2B (~2.4 GB, effective ~2B),
+  /// a big quality step up from the 1B. Override the exact filename at build
+  /// time with `--dart-define=GEMMA_MODEL_URL=<resolve/main/... url>` (use the
+  /// `/resolve/main/` form, not `/blob/main/`) without a code change.
   static const String _defaultGemmaModelUrl =
-      'https://huggingface.co/litert-community/Gemma3-1B-IT/resolve/main/'
-      'Gemma3-1B-IT_multi-prefill-seq_q4_ekv4096.litertlm';
+      'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/'
+      'resolve/main/gemma-4-E2B-it.litertlm';
   static const String _urlOverride = String.fromEnvironment('GEMMA_MODEL_URL');
   static String get gemmaModelUrl =>
       _urlOverride.isNotEmpty ? _urlOverride : _defaultGemmaModelUrl;
@@ -83,7 +84,7 @@ class LocalModels {
   Future<void> installGemma({void Function(int percent)? onProgress}) async {
     await initEngine();
     await FlutterGemma.installModel(
-      modelType: ModelType.gemmaIt,
+      modelType: ModelType.gemma4,
       fileType: ModelFileType.litertlm,
     )
         .fromNetwork(

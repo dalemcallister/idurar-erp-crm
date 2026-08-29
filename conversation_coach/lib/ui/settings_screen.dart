@@ -78,7 +78,7 @@ class _OnDeviceSection extends StatelessWidget {
                 Row(
                   children: [
                     const Expanded(
-                      child: Text('Analysis model — Gemma 3 1B',
+                      child: Text('Analysis model — Gemma 4 E2B',
                           style: TextStyle(fontWeight: FontWeight.w600)),
                     ),
                     if (state.gemmaInstalled && !downloading)
@@ -90,7 +90,7 @@ class _OnDeviceSection extends StatelessWidget {
                 Text(
                   state.gemmaInstalled
                       ? 'Installed · ready for on-device analysis'
-                      : 'About 0.5 GB. Required before conversations can be '
+                      : 'About 2.4 GB. Required before conversations can be '
                           'analysed on-device. Download over Wi-Fi.',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
