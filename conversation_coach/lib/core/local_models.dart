@@ -175,13 +175,24 @@ class LocalModels {
     await ensureWhisperReady();
     final lang = languages.isEmpty ? 'auto' : languages.first;
 
-    // Diagnostics (visible in `flutter run` logs): confirm the audio file is
-    // real and watch the model download/transcription progress.
+    // Diagnostics (visible in `flutter run` logs AND surfaced in the on-screen
+    // error) — confirm the audio file and the model file are real.
     final f = File(audioPath);
     final exists = await f.exists();
     final size = exists ? await f.length() : 0;
-    debugPrint('[WHISPER] transcribe start path=$audioPath exists=$exists '
-        'size=$size bytes lang=$lang model=$whisperModel');
+    String modelPath = '?';
+    bool modelExists = false;
+    int modelSize = 0;
+    try {
+      modelPath = await _whisper.getPath(whisperModel);
+      final mf = File(modelPath);
+      modelExists = mf.existsSync();
+      modelSize = modelExists ? mf.lengthSync() : 0;
+    } catch (e) {
+      modelPath = 'getPath failed: $e';
+    }
+    debugPrint('[WHISPER] transcribe start audio(exists=$exists size=$size) '
+        'model(exists=$modelExists size=$modelSize path=$modelPath) lang=$lang');
 
     final result = await _whisper.transcribe(
       model: whisperModel,
@@ -197,8 +208,9 @@ class LocalModels {
 
     if (result == null) {
       throw Exception(
-          'On-device transcription produced no result — the Whisper model may '
-          'still be downloading. Wait for Wi-Fi to finish, then retry.');
+          'On-device transcription produced no result.\n'
+          'model exists=$modelExists size=$modelSize\n'
+          'audio exists=$exists size=$size');
     }
 
     final turns = <TranscriptTurn>[];
