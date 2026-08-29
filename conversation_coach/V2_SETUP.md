@@ -44,16 +44,46 @@ apply these on your machine.
   ```
 - Then: `cd ios && pod install && cd ..`
 
-### Android (`android/app/build.gradle.kts`)
-- `flutter_gemma`'s LiteRT-LM `.litertlm` runtime is **arm64 only** — restrict ABIs:
-  ```kotlin
-  android {
+### Android — confirmed working config
+
+First install **Android SDK Command-line Tools** (Android Studio → SDK Manager →
+SDK Tools) and accept licenses: `flutter doctor --android-licenses`. The build
+needs **NDK 29.0.13113456** and **compileSdk 36** (pulled in by whisper_ggml /
+ffmpeg_kit); Gradle downloads them once licenses are accepted.
+
+**`android/app/build.gradle.kts`** — in `android { }`:
+```kotlin
+android {
+    compileSdk = 36
+    ndkVersion = "29.0.13113456"
     defaultConfig {
-      ndk { abiFilters += listOf("arm64-v8a") }
+        minSdk = 24
+        // flutter_gemma's LiteRT-LM runtime is arm64-only.
+        ndk { abiFilters += listOf("arm64-v8a") }
+        // ...existing applicationId/targetSdk/version lines...
     }
-  }
-  ```
-- `minSdk` 24 (already set) is fine (gemma needs 21+, whisper 21+).
+}
+```
+
+**`android/build.gradle.kts`** (root) — plugin modules don't inherit the app's
+compileSdk/NDK, so force them project-wide. Add this block **above** the
+existing `subprojects { project.evaluationDependsOn(":app") }`:
+```kotlin
+subprojects {
+    val configureAndroid = {
+        if (project.hasProperty("android")) {
+            val androidExt =
+                project.extensions.getByName("android") as com.android.build.gradle.BaseExtension
+            androidExt.compileSdkVersion(36)
+            androidExt.ndkVersion = "29.0.13113456"
+        }
+    }
+    if (state.executed) configureAndroid() else afterEvaluate { configureAndroid() }
+}
+```
+
+- arm64-only means no Intel-Mac emulator / 32-bit devices — test on a real
+  arm64 phone (Apple-Silicon Mac emulators are arm64 and fine).
 - The `libOpenCL.so` GPU hint is already in the tracked `AndroidManifest.xml`.
 
 > Note: arm64-only means the app won't run on the **Android emulator on an Intel
