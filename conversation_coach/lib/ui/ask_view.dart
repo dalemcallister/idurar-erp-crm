@@ -22,10 +22,11 @@ class _AskViewState extends State<AskView> {
   List<QAMessage> _messages = [];
   bool _sending = false;
 
-  static const _suggestions = [
-    'What did they say about budget?',
-    'Where did I interrupt?',
-    'Give me the three moments I lost them.',
+  // Always-relevant fallbacks; refined from the analysis in [_load].
+  List<String> _suggestions = const [
+    'Summarise the key points.',
+    'What did I do well?',
+    'What could I do differently next time?',
   ];
 
   @override
@@ -35,9 +36,29 @@ class _AskViewState extends State<AskView> {
   }
 
   Future<void> _load() async {
-    final msgs =
-        await context.read<AppState>().qaService.history(widget.sessionId);
-    if (mounted) setState(() => _messages = msgs);
+    final state = context.read<AppState>();
+    final msgs = await state.qaService.history(widget.sessionId);
+    // Seed the example chips from this conversation's analysis so they're
+    // relevant, not generic placeholders.
+    final analysis = await state.repo.analysisForSession(widget.sessionId);
+    final derived = <String>[];
+    if (analysis != null) {
+      for (final q in analysis.openQuestions.take(2)) {
+        final t = q.trim();
+        if (t.isNotEmpty) derived.add(t.endsWith('?') ? t : '$t?');
+      }
+      for (final topic in analysis.topics.take(2)) {
+        final t = topic.trim();
+        if (t.isNotEmpty) derived.add('What was said about ${t.toLowerCase()}?');
+      }
+    }
+    derived.add('What could I do differently next time?');
+    if (mounted) {
+      setState(() {
+        _messages = msgs;
+        _suggestions = derived.take(4).toList();
+      });
+    }
   }
 
   Future<void> _send(String text) async {

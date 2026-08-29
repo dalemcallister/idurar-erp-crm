@@ -130,7 +130,7 @@ class LocalModels {
     // Cap output to keep a runaway/repetition loop from ballooning the reply.
     final chat = await model.createChat(
       systemInstruction: system,
-      maxOutputTokens: 1024,
+      maxOutputTokens: 2048,
     );
     await chat.addQueryChunk(Message.text(text: user, isUser: true));
     final buffer = StringBuffer();

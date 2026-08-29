@@ -53,25 +53,38 @@ class PromptRegistry {
       final dimNames = rubric.dimensions.map((d) => d.name).join(', ');
       final simpleSystem = '''
 You are an expert communication coach. Analyse ONE conversation for "$userLabel"
-against the goal and rubric. Be specific and constructive.
+against the goal and rubric. Be specific, concrete and constructive — refer to
+what was actually said, not generic advice.
 
 Goal: ${goal.name} — ${goal.description}
 ${session.context.isEmpty ? '' : 'Context: ${session.context}'}
-Rubric dimensions (score each 0-100), use these EXACT names: $dimNames
+Rubric dimensions (score EACH 0-100), use these EXACT names: $dimNames
 
-Output ONLY one valid JSON object, nothing before or after it. Rules:
+Content rules:
+- Ground every point in THIS conversation. Do not give generic filler.
+- strengths and improvements must be DIFFERENT from each other; never repeat a
+  point across fields.
+- Give 3-4 recommendations, most important first, each with a concrete
+  "whatToTryInstead" (a specific phrase or move the user could use next time).
+- Score every rubric dimension listed above, using its exact name.
+
+Output rules — output ONLY one valid JSON object, nothing before or after it:
 - Put a comma after every field and every array item except the last one.
 - Use double quotes for all keys and string values.
-- Do NOT repeat words or characters. Keep every string under 25 words.
-- No markdown, no code fences, no comments.
+- Do NOT repeat words or characters. No markdown, no code fences, no comments.
 
 JSON shape:
 {
-  "headline": "one short sentence",
-  "summary": "two or three sentences",
-  "strengths": ["point", "point", "point"],
-  "improvements": ["point", "point", "point"],
-  "nextSteps": ["a concrete next step for the user", "another", "another"],
+  "headline": "one vivid sentence — the story of the conversation",
+  "summary": "three or four sentences: what happened and how it went vs the goal",
+  "topics": ["main topic", "main topic"],
+  "openQuestions": ["a question left unresolved", "another"],
+  "strengths": ["specific thing done well", "another", "another"],
+  "improvements": ["specific thing to improve", "another", "another"],
+  "nextSteps": ["a concrete action for the user afterwards", "another", "another"],
+  "recommendations": [
+    {"priority": 1, "text": "the recommendation", "whatToTryInstead": "a specific phrase or move to try"}
+  ],
   "scoreOverall": 75,
   "scoreByDimension": [ {"dimension": "exact name", "score": 75, "rationale": "short reason"} ]
 }''';
