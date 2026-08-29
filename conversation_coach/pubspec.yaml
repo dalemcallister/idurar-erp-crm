@@ -41,10 +41,10 @@ dependencies:
   # --- v2: fully on-device inference (no keys, nothing leaves the phone) ---
   # On-device LLM (analysis) via LiteRT-LM / Gemma. `flutter_gemma` is the API;
   # `flutter_gemma_litertlm` provides the LiteRtLmEngine runtime.
-  flutter_gemma: any
-  flutter_gemma_litertlm: any
+  flutter_gemma: ^1.6.5
+  flutter_gemma_litertlm: ^1.5.3
   # On-device Whisper (speech-to-text) via whisper.cpp.
-  whisper_ggml: any
+  whisper_ggml: ^2.6.0
 
   # Charts for the progress trends and emotion timeline.
   fl_chart: ^0.68.0
