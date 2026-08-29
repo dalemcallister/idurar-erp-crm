@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_gemma/flutter_gemma.dart';
 import 'package:flutter_gemma_litertlm/flutter_gemma_litertlm.dart';
@@ -144,12 +146,27 @@ class LocalModels {
     required List<String> languages,
   }) async {
     final lang = languages.isEmpty ? 'auto' : languages.first;
+
+    // Diagnostics (visible in `flutter run` logs): confirm the audio file is
+    // real and watch the model download/transcription progress.
+    final f = File(audioPath);
+    final exists = await f.exists();
+    final size = exists ? await f.length() : 0;
+    debugPrint('[WHISPER] transcribe start path=$audioPath exists=$exists '
+        'size=$size bytes lang=$lang model=$whisperModel');
+
     final result = await _whisper.transcribe(
       model: whisperModel,
       audioPath: audioPath,
       lang: lang,
       withSegments: true,
+      keepModelLoaded: true,
+      onProgress: (p) => debugPrint('[WHISPER] progress $p'),
     );
+    debugPrint('[WHISPER] transcribe done result='
+        '${result == null ? 'NULL' : 'textLen=${result.transcription.text.length} '
+            'segs=${result.transcription.segments?.length}'}');
+
     if (result == null) {
       throw Exception(
           'On-device transcription produced no result — the Whisper model may '
