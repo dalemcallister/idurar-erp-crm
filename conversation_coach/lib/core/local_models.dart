@@ -145,25 +145,42 @@ class LocalModels {
 
   // ---- Transcription model (Whisper) --------------------------------------
 
-  /// True when the Whisper ggml model file is present on disk.
+  /// A real ggml Whisper model is tens of MB+; anything smaller is a partial or
+  /// error-page download that whisper.cpp will fail to load.
+  static const int _minWhisperBytes = 10 * 1024 * 1024;
+
+  /// True when a *complete* Whisper ggml model file is present on disk. Checks
+  /// the size, not just existence — a truncated download would otherwise show
+  /// as installed but fail to load at transcribe time (seen on iOS).
   Future<bool> isWhisperInstalled() async {
     try {
       final path = await _whisper.getPath(whisperModel);
-      return File(path).existsSync();
+      final file = File(path);
+      return file.existsSync() && file.lengthSync() >= _minWhisperBytes;
     } catch (_) {
       return false;
     }
   }
 
-  /// Downloads the Whisper model if it isn't already present. whisper_ggml does
-  /// NOT auto-download in this version — transcribe() just fails to load a
-  /// missing file — so we fetch it explicitly. (No progress callback is exposed
-  /// by the plugin, so callers show an indeterminate state.)
+  /// Ensures a complete Whisper model is on disk. whisper_ggml does NOT
+  /// auto-download in this version — transcribe() just fails to load a missing
+  /// (or partial) file — so we fetch it explicitly, deleting any truncated
+  /// download first so it is refetched cleanly.
   Future<void> ensureWhisperReady() async {
-    if (await isWhisperInstalled()) return;
-    debugPrint('[WHISPER] model missing — downloading $whisperModel …');
+    final path = await _whisper.getPath(whisperModel);
+    final file = File(path);
+    if (file.existsSync() && file.lengthSync() >= _minWhisperBytes) return;
+    if (file.existsSync()) {
+      debugPrint('[WHISPER] model file too small (${file.lengthSync()} bytes) '
+          '— deleting and refetching');
+      try {
+        file.deleteSync();
+      } catch (_) {}
+    }
+    debugPrint('[WHISPER] downloading model $whisperModel …');
     await _whisper.downloadModel(whisperModel);
-    debugPrint('[WHISPER] model download complete');
+    debugPrint('[WHISPER] model download complete '
+        '(${file.existsSync() ? file.lengthSync() : 0} bytes)');
   }
 
   /// Transcribes a local audio file entirely on-device.
