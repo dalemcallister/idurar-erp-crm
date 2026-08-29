@@ -89,6 +89,9 @@ class AppState extends ChangeNotifier {
   int? gemmaDownloadPercent;
   bool gemmaInstalled = false;
 
+  /// Last model-download error, surfaced in Settings so failures aren't silent.
+  String? gemmaError;
+
   Future<void> init() async {
     await database.open();
     repo = Repository(database);
@@ -321,6 +324,7 @@ class AppState extends ChangeNotifier {
   /// Downloads + installs the on-device analysis model, streaming progress into
   /// [gemmaDownloadPercent].
   Future<void> installGemma() async {
+    gemmaError = null;
     gemmaDownloadPercent = 0;
     notifyListeners();
     try {
@@ -329,6 +333,9 @@ class AppState extends ChangeNotifier {
         notifyListeners();
       });
       gemmaInstalled = true;
+    } catch (e, st) {
+      gemmaError = e.toString();
+      debugPrint('[LOCAL] gemma install failed: $e\n$st');
     } finally {
       gemmaDownloadPercent = null;
       gemmaInstalled = await LocalModels.instance.isGemmaInstalled();

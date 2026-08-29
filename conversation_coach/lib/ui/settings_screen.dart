@@ -114,10 +114,26 @@ class _OnDeviceSection extends StatelessWidget {
                   )
                 else
                   FilledButton.icon(
-                    onPressed: () => state.installGemma(),
+                    onPressed: () async {
+                      await state.installGemma();
+                      if (state.gemmaError != null && context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                          content: Text('Download failed: ${state.gemmaError}'),
+                          duration: const Duration(seconds: 10),
+                        ));
+                      }
+                    },
                     icon: const Icon(Icons.download),
                     label: const Text('Download analysis model'),
                   ),
+                if (state.gemmaError != null) ...[
+                  const SizedBox(height: 8),
+                  SelectableText(
+                    'Download failed:\n${state.gemmaError}',
+                    style: const TextStyle(
+                        fontSize: 12, color: Color(0xFFB44A3F)),
+                  ),
+                ],
               ],
             ),
           ),
