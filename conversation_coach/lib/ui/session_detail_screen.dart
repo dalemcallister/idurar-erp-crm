@@ -212,6 +212,8 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
             : _ProcessingState(
                 status: session.status,
                 loadError: _loadError,
+                analysisError:
+                    context.watch<AppState>().analysisErrors[widget.sessionId],
                 onRetry: () {
                   setState(() => _loadError = null);
                   _load();
@@ -250,11 +252,13 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
 class _ProcessingState extends StatelessWidget {
   final SessionStatus status;
   final Object? loadError;
+  final String? analysisError;
   final VoidCallback? onRetry;
   final VoidCallback? onRetryAnalysis;
   const _ProcessingState({
     required this.status,
     this.loadError,
+    this.analysisError,
     this.onRetry,
     this.onRetryAnalysis,
   });
@@ -309,11 +313,19 @@ class _ProcessingState extends StatelessWidget {
                   size: 48, color: Color(0xFFB44A3F)),
               const SizedBox(height: 16),
               const Text(
-                "Analysis couldn't complete. The recording is kept — make sure "
-                'your provider keys are set, then retry on the same audio (no '
-                'need to re-record).',
+                "Analysis couldn't complete. The recording is kept — retry on "
+                'the same audio (no need to re-record).',
                 textAlign: TextAlign.center,
               ),
+              if (analysisError != null) ...[
+                const SizedBox(height: 12),
+                SelectableText(
+                  analysisError!,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                      fontSize: 12, color: Color(0xFFB44A3F)),
+                ),
+              ],
               const SizedBox(height: 16),
               if (onRetryAnalysis != null)
                 FilledButton.icon(

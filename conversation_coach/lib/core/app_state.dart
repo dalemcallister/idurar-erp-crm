@@ -92,6 +92,10 @@ class AppState extends ChangeNotifier {
   /// Last model-download error, surfaced in Settings so failures aren't silent.
   String? gemmaError;
 
+  /// Per-session analysis-pipeline error, surfaced on the failed session screen
+  /// so transcription/analysis failures are diagnosable on-device.
+  final Map<String, String> analysisErrors = {};
+
   Future<void> init() async {
     await database.open();
     repo = Repository(database);
@@ -364,13 +368,17 @@ class AppState extends ChangeNotifier {
   /// so a transient failure (e.g. a flaky network) can be re-run on the audio
   /// already on disk — no re-recording needed.
   Future<void> runAnalysisPipeline(Session session, String audioPath) async {
+    analysisErrors.remove(session.id);
     try {
       final goal = await repo.goal(session.goalId);
       final rubric = goal == null ? null : await repo.rubric(goal.rubricId);
       if (goal == null || rubric == null) {
         debugPrint('[PIPELINE] missing goal/rubric for ${session.goalId} '
             '-> marking failed');
+        analysisErrors[session.id] =
+            'Missing goal/rubric for this session.';
         await repo.updateSessionStatus(session.id, SessionStatus.failed);
+        notifyListeners();
         return;
       }
       final engine = await transcriptionEngine();
@@ -388,7 +396,9 @@ class AppState extends ChangeNotifier {
       if (cost != null) await recordSpend(cost);
     } catch (e, st) {
       debugPrint('[PIPELINE] FAILED for ${session.id}: $e\n$st');
+      analysisErrors[session.id] = e.toString();
       await repo.updateSessionStatus(session.id, SessionStatus.failed);
+      notifyListeners();
     }
   }
 

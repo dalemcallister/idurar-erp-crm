@@ -36,6 +36,11 @@ class LocalModels {
   static String get gemmaModelUrl =>
       _urlOverride.isNotEmpty ? _urlOverride : _defaultGemmaModelUrl;
 
+  /// flutter_gemma identifies an installed model by its **filename** (the last
+  /// path segment of the download URL), so install checks must use this — not a
+  /// made-up id.
+  static String get gemmaModelFile => Uri.parse(gemmaModelUrl).pathSegments.last;
+
   /// Optional HuggingFace token, ONLY used to *download* a gated model (never
   /// for inference). Pass at build time with
   /// `--dart-define=HUGGINGFACE_TOKEN=hf_xxx`, or host an un-gated copy of the
@@ -66,7 +71,7 @@ class LocalModels {
 
   Future<bool> isGemmaInstalled() async {
     try {
-      return await FlutterGemma.isModelInstalled(gemmaModelId);
+      return await FlutterGemma.isModelInstalled(gemmaModelFile);
     } catch (_) {
       return false;
     }
@@ -90,7 +95,7 @@ class LocalModels {
   Future<void> uninstallGemma() async {
     await _closeGemma();
     try {
-      await FlutterGemma.uninstallModel(gemmaModelId);
+      await FlutterGemma.uninstallModel(gemmaModelFile);
     } catch (e) {
       debugPrint('[LOCAL] uninstallGemma failed: $e');
     }
