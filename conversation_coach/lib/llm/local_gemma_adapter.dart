@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 import '../core/local_models.dart';
 import '../data/models/provider_config.dart';
 import 'llm_provider.dart';
@@ -51,6 +53,7 @@ class LocalGemmaAdapter implements LLMProvider {
     try {
       final text = await LocalModels.instance
           .analyze(system: system, user: request.user);
+      debugPrint('[GEMMA] raw output (${text.length} chars):\n$text');
       if (text.trim().isEmpty) {
         throw const LLMException('The on-device model returned an empty response.');
       }

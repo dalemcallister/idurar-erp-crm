@@ -182,20 +182,40 @@ class AnalysisOrchestrator {
   }
 
   Map<String, dynamic> _parseJson(String text) {
-    try {
-      return jsonDecode(text) as Map<String, dynamic>;
-    } catch (_) {
-      // Tolerate models that wrap JSON in prose/fences — extract the object.
-      final start = text.indexOf('{');
-      final end = text.lastIndexOf('}');
-      if (start >= 0 && end > start) {
-        try {
-          return jsonDecode(text.substring(start, end + 1))
-              as Map<String, dynamic>;
-        } catch (_) {}
+    Map<String, dynamic>? tryDecode(String s) {
+      try {
+        final v = jsonDecode(s);
+        return v is Map<String, dynamic> ? v : null;
+      } catch (_) {
+        return null;
       }
-      throw const LLMException('Could not parse analysis JSON from the model.');
     }
+
+    // 1. Straight JSON.
+    final direct = tryDecode(text);
+    if (direct != null) return direct;
+
+    // 2. Small models often wrap JSON in ```json fences, add prose, or leave
+    //    trailing commas. Strip fences, take the outermost {...}, and drop
+    //    trailing commas before a } or ].
+    var t = text.replaceAll('```json', '').replaceAll('```', '').trim();
+    final start = t.indexOf('{');
+    final end = t.lastIndexOf('}');
+    if (start >= 0 && end > start) {
+      var body = t.substring(start, end + 1);
+      body = body.replaceAll(RegExp(r',(\s*[}\]])'), r'$1');
+      final parsed = tryDecode(body);
+      if (parsed != null) return parsed;
+    }
+
+    // Include a snippet of what the model actually returned so the failure is
+    // diagnosable on-device.
+    final snippet =
+        text.trim().isEmpty ? '(empty response)' : text.trim();
+    final shown = snippet.length > 300 ? '${snippet.substring(0, 300)}…' : snippet;
+    throw LLMException(
+        'Could not parse analysis JSON from the on-device model. It returned:\n'
+        '$shown');
   }
 
   Analysis _buildAnalysis({
