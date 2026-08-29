@@ -90,6 +90,8 @@ class AnalysisOrchestrator {
       segments: segments,
       speakers: speakerMap,
       modelOverride: providerConfig.perTaskOverrides['analysis'],
+      // Small on-device models need the compact, strict-JSON prompt.
+      simple: providerConfig.provider == ProviderKind.local,
     );
 
     final response = await _completeWithRetry(provider, request);
@@ -203,6 +205,11 @@ class AnalysisOrchestrator {
     final end = t.lastIndexOf('}');
     if (start >= 0 && end > start) {
       var body = t.substring(start, end + 1);
+      // Insert missing commas between a value/array/object end and the next key
+      // on a new line — small models frequently drop them.
+      body = body.replaceAllMapped(
+          RegExp(r'([}\]"\d])\s*\n(\s*")'), (m) => '${m[1]},\n${m[2]}');
+      // Drop trailing commas before a } or ].
       body = body.replaceAll(RegExp(r',(\s*[}\]])'), r'$1');
       final parsed = tryDecode(body);
       if (parsed != null) return parsed;

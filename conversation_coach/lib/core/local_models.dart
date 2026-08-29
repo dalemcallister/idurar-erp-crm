@@ -126,7 +126,11 @@ class LocalModels {
   }) async {
     final model = await _ensureGemma();
     // A fresh chat per call keeps each analysis independent (no history bleed).
-    final chat = await model.createChat(systemInstruction: system);
+    // Cap output to keep a runaway/repetition loop from ballooning the reply.
+    final chat = await model.createChat(
+      systemInstruction: system,
+      maxOutputTokens: 1024,
+    );
     await chat.addQueryChunk(Message.text(text: user, isUser: true));
     final buffer = StringBuffer();
     await for (final response in chat.generateChatResponseAsync()) {

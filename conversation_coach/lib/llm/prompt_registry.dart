@@ -33,6 +33,7 @@ class PromptRegistry {
     required List<Segment> segments,
     required Map<String, Speaker> speakers,
     String? modelOverride,
+    bool simple = false,
   }) {
     final transcript = renderTranscript(segments, speakers);
     final dims = rubric.dimensions
@@ -44,6 +45,45 @@ class PromptRegistry {
         : speakers.values
             .firstWhere((s) => s.isUser, orElse: () => speakers.values.first)
             .label;
+
+    // A compact, strict prompt for small on-device models: fewer fields, no
+    // evidence ids (which sent the 1B model into repetition loops), and
+    // explicit rules to keep the JSON valid.
+    if (simple) {
+      final dimNames = rubric.dimensions.map((d) => d.name).join(', ');
+      final simpleSystem = '''
+You are an expert communication coach. Analyse ONE conversation for "$userLabel"
+against the goal and rubric. Be specific and constructive.
+
+Goal: ${goal.name} — ${goal.description}
+${session.context.isEmpty ? '' : 'Context: ${session.context}'}
+Rubric dimensions (score each 0-100), use these EXACT names: $dimNames
+
+Output ONLY one valid JSON object, nothing before or after it. Rules:
+- Put a comma after every field and every array item except the last one.
+- Use double quotes for all keys and string values.
+- Do NOT repeat words or characters. Keep every string under 25 words.
+- No markdown, no code fences, no comments.
+
+JSON shape:
+{
+  "headline": "one short sentence",
+  "summary": "two or three sentences",
+  "strengths": ["point", "point", "point"],
+  "improvements": ["point", "point", "point"],
+  "nextSteps": ["a concrete next step for the user", "another", "another"],
+  "scoreOverall": 75,
+  "scoreByDimension": [ {"dimension": "exact name", "score": 75, "rationale": "short reason"} ]
+}''';
+      return PromptRequest(
+        system: simpleSystem,
+        user: 'Transcript:\n$transcript',
+        maxTokens: 4096,
+        expectJson: true,
+        modelOverride: modelOverride,
+        task: 'analysis',
+      );
+    }
 
     final system = '''
 You are an expert communication coach. You analyse a single recorded
