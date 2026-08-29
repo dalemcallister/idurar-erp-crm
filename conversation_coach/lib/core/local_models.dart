@@ -1,0 +1,166 @@
+import 'package:flutter/foundation.dart';
+import 'package:flutter_gemma/flutter_gemma.dart';
+import 'package:flutter_gemma_litertlm/flutter_gemma_litertlm.dart';
+import 'package:whisper_ggml/whisper_ggml.dart';
+
+import '../transcription/transcription_engine.dart';
+
+/// Single seam over the on-device model runtimes (v2, fully offline).
+///
+/// ALL `flutter_gemma` (LLM) and `whisper_ggml` (STT) calls live here, so if a
+/// plugin's API shifts, only this file changes. The rest of the app talks to
+/// the same [LLMProvider] / [TranscriptionEngine] interfaces as v1 — the
+/// adapters just delegate here.
+///
+/// Nothing here touches the network except the one-time *model download*; no
+/// transcript or analysis ever leaves the device.
+class LocalModels {
+  LocalModels._();
+  static final LocalModels instance = LocalModels._();
+
+  // ---- Model identities ----------------------------------------------------
+
+  /// The on-device analysis model. Gemma 3 1B (~0.5 GB) is the size/quality
+  /// sweet spot for a phone; swap the URL/type to trade up (e.g. Gemma3n E2B)
+  /// or down (Qwen3 0.6B). LiteRT-LM `.litertlm` format.
+  static const String gemmaModelId = 'gemma3-1b-it';
+  static const String gemmaModelUrl =
+      'https://huggingface.co/litert-community/Gemma3-1B-IT/resolve/main/model.litertlm';
+
+  /// Optional HuggingFace token, ONLY used to *download* a gated model (never
+  /// for inference). Pass at build time with
+  /// `--dart-define=HUGGINGFACE_TOKEN=hf_xxx`, or host an un-gated copy of the
+  /// model and point [gemmaModelUrl] at it to need no token at all.
+  static const String _hfToken = String.fromEnvironment('HUGGINGFACE_TOKEN');
+
+  /// The on-device transcription model. `base` (~140 MB) is a good balance;
+  /// `small` (~460 MB) is more accurate but slower. whisper_ggml downloads it
+  /// automatically on first use.
+  WhisperModel whisperModel = WhisperModel.base;
+
+  final WhisperController _whisper = WhisperController();
+
+  bool _engineReady = false;
+  InferenceModel? _gemma;
+
+  // ---- Engine init (call once at startup) ----------------------------------
+
+  Future<void> initEngine() async {
+    if (_engineReady) return;
+    await FlutterGemma.initialize(
+      inferenceEngines: const [LiteRtLmEngine()],
+    );
+    _engineReady = true;
+  }
+
+  // ---- Analysis model (Gemma) ---------------------------------------------
+
+  Future<bool> isGemmaInstalled() async {
+    try {
+      return await FlutterGemma.isModelInstalled(gemmaModelId);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Downloads + installs the analysis model, reporting 0..100 progress.
+  Future<void> installGemma({void Function(int percent)? onProgress}) async {
+    await initEngine();
+    await FlutterGemma.installModel(
+      modelType: ModelType.gemmaIt,
+      fileType: ModelFileType.litertlm,
+    )
+        .fromNetwork(
+          gemmaModelUrl,
+          token: _hfToken.isEmpty ? null : _hfToken,
+        )
+        .withProgress((p) => onProgress?.call(p))
+        .install();
+  }
+
+  Future<void> uninstallGemma() async {
+    await _closeGemma();
+    try {
+      await FlutterGemma.uninstallModel(gemmaModelId);
+    } catch (e) {
+      debugPrint('[LOCAL] uninstallGemma failed: $e');
+    }
+  }
+
+  Future<InferenceModel> _ensureGemma() async {
+    await initEngine();
+    return _gemma ??= await FlutterGemma.getActiveModel(
+      maxTokens: 2048,
+      preferredBackend: PreferredBackend.gpu,
+    );
+  }
+
+  Future<void> _closeGemma() async {
+    try {
+      await _gemma?.close();
+    } catch (_) {}
+    _gemma = null;
+  }
+
+  /// Runs one analysis/Q&A completion fully on-device and returns the raw text
+  /// (expected to be JSON — the orchestrator tolerates fences/prose around it).
+  Future<String> analyze({
+    required String system,
+    required String user,
+  }) async {
+    final model = await _ensureGemma();
+    // A fresh chat per call keeps each analysis independent (no history bleed).
+    final chat = await model.createChat(systemInstruction: system);
+    await chat.addQueryChunk(Message.text(text: user, isUser: true));
+    final buffer = StringBuffer();
+    await for (final response in chat.generateChatResponseAsync()) {
+      if (response is TextResponse) {
+        buffer.write(response.token);
+      }
+      // FunctionCallResponse is ignored — the analysis prompt registers no tools.
+    }
+    return buffer.toString();
+  }
+
+  // ---- Transcription model (Whisper) --------------------------------------
+
+  /// Transcribes a local audio file entirely on-device.
+  Future<TranscriptionResult> transcribeFile({
+    required String audioPath,
+    required List<String> languages,
+  }) async {
+    final lang = languages.isEmpty ? 'auto' : languages.first;
+    final result = await _whisper.transcribe(
+      model: whisperModel,
+      audioPath: audioPath,
+      lang: lang,
+      withSegments: true,
+    );
+
+    final turns = <TranscriptTurn>[];
+    final segments = result?.transcription.segments ?? const [];
+    for (final s in segments) {
+      final text = s.text.trim();
+      if (text.isEmpty) continue;
+      turns.add(TranscriptTurn(
+        startMs: s.fromTs.inMilliseconds,
+        endMs: s.toTs.inMilliseconds,
+        speakerTag: 'S1',
+        text: text,
+      ));
+    }
+    // Fallback: a flat transcript with no segment timings still yields a turn.
+    if (turns.isEmpty) {
+      final flat = (result?.transcription.text ?? '').trim();
+      if (flat.isNotEmpty) {
+        turns.add(TranscriptTurn(
+            startMs: 0, endMs: 0, speakerTag: 'S1', text: flat));
+      }
+    }
+
+    return TranscriptionResult(
+      turns: turns,
+      language: languages.isEmpty ? 'en' : languages.first,
+    );
+  }
+}

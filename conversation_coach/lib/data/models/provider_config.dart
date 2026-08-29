@@ -1,7 +1,7 @@
 import 'dart:convert';
 
 /// The kind of provider adapter backing a [ProviderConfig].
-enum ProviderKind { anthropic, openaiCompatible, ollama, mock }
+enum ProviderKind { anthropic, openaiCompatible, ollama, local, mock }
 
 extension ProviderKindX on ProviderKind {
   String get displayName {
@@ -12,6 +12,8 @@ extension ProviderKindX on ProviderKind {
         return 'OpenAI-compatible';
       case ProviderKind.ollama:
         return 'Ollama (local)';
+      case ProviderKind.local:
+        return 'On-device (Gemma)';
       case ProviderKind.mock:
         return 'Built-in demo (offline)';
     }
@@ -58,6 +60,15 @@ class ProviderConfig {
         model: 'claude-opus-4-8',
         endpointUrl: 'https://api.anthropic.com',
         apiKeyRef: 'anthropic_api_key',
+      );
+
+  /// On-device analysis provider (v2 default) — runs a local Gemma model, no
+  /// key and no network for inference.
+  factory ProviderConfig.localGemma() => const ProviderConfig(
+        id: 'local-gemma',
+        provider: ProviderKind.local,
+        model: 'gemma3-1b-it',
+        endpointUrl: '',
       );
 
   /// Offline demo provider — lets the app run end-to-end without a key

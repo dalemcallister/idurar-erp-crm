@@ -43,6 +43,12 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+
+        <!-- v2 on-device inference: allow the GPU (OpenCL) backend when present
+             for flutter_gemma / LiteRT-LM. Optional — falls back to CPU. -->
+        <uses-native-library
+            android:name="libOpenCL.so"
+            android:required="false" />
     </application>
 
     <!-- url_launcher: declare that we open the mail composer (Android 11+ needs
