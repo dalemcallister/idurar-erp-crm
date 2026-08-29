@@ -1,5 +1,12 @@
 import 'dart:convert';
 
+/// Lenient coercion helpers — small on-device models frequently emit numbers as
+/// strings (or nonsense), so parsing must not hard-cast.
+num? _numOf(dynamic v) =>
+    v is num ? v : (v is String ? num.tryParse(v.trim()) : null);
+int _asInt(dynamic v) => _numOf(v)?.toInt() ?? 0;
+double _asDouble(dynamic v) => _numOf(v)?.toDouble() ?? 0;
+
 /// A single scored rubric dimension with its supporting evidence (F-ANA-05/06).
 class DimensionScore {
   final String dimension;
@@ -24,12 +31,13 @@ class DimensionScore {
       };
 
   factory DimensionScore.fromJson(Map<String, dynamic> j) => DimensionScore(
-        dimension: j['dimension'] as String,
-        score: (j['score'] as num).toDouble(),
-        rationale: (j['rationale'] as String?) ?? '',
-        evidenceSegmentIds: ((j['evidenceSegmentIds'] as List?) ?? [])
-            .map((e) => e.toString())
-            .toList(),
+        dimension: (j['dimension'] ?? '').toString(),
+        score: _asDouble(j['score']).clamp(0, 100).toDouble(),
+        rationale: (j['rationale'] ?? '').toString(),
+        evidenceSegmentIds: switch (j['evidenceSegmentIds'] ?? j['evidenceRefs']) {
+          final List l => l.map((e) => e.toString()).toList(),
+          _ => const <String>[],
+        },
       );
 }
 
@@ -58,11 +66,11 @@ class EmotionPoint {
       };
 
   factory EmotionPoint.fromJson(Map<String, dynamic> j) => EmotionPoint(
-        speakerId: j['speakerId'] as String,
-        atMs: j['atMs'] as int,
-        valence: (j['valence'] as num).toDouble(),
-        energy: (j['energy'] as num).toDouble(),
-        label: (j['label'] as String?) ?? '',
+        speakerId: (j['speakerId'] ?? '').toString(),
+        atMs: _asInt(j['atMs']),
+        valence: _asDouble(j['valence']).clamp(-1.0, 1.0),
+        energy: _asDouble(j['energy']).clamp(0.0, 1.0),
+        label: (j['label'] ?? '').toString(),
       );
 }
 

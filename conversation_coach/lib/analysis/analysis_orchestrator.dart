@@ -226,31 +226,59 @@ class AnalysisOrchestrator {
     required String modelUsed,
     required TokenUsage usage,
   }) {
-    List<String> strs(String key) =>
-        ((parsed[key] as List?) ?? const []).map((e) => e.toString()).toList();
+    // Small models are sloppy about types: a field the schema says is a string
+    // array may come back as a bare string; numbers may be strings; list items
+    // may be malformed. Coerce leniently and skip anything unparseable rather
+    // than failing the whole analysis.
+    List<String> strs(String key) {
+      final v = parsed[key];
+      if (v is List) {
+        return v
+            .map((e) => e.toString().trim())
+            .where((s) => s.isNotEmpty)
+            .toList();
+      }
+      if (v is String && v.trim().isNotEmpty) return [v.trim()];
+      return const [];
+    }
 
-    final dims = ((parsed['scoreByDimension'] as List?) ?? const [])
-        .map((e) => DimensionScore.fromJson(e as Map<String, dynamic>))
-        .toList();
+    List<Map<String, dynamic>> maps(String key) {
+      final v = parsed[key];
+      if (v is! List) return const [];
+      return v.whereType<Map<String, dynamic>>().toList();
+    }
+
+    final dims = <DimensionScore>[];
+    for (final m in maps('scoreByDimension')) {
+      try {
+        dims.add(DimensionScore.fromJson(m));
+      } catch (_) {}
+    }
 
     // Use the model's overall score if present, else compute from the rubric
     // weights as a safety net (capability negotiation / output consistency).
-    double overall = (parsed['scoreOverall'] as num?)?.toDouble() ?? -1;
+    final rawOverall = parsed['scoreOverall'];
+    double overall = rawOverall is num
+        ? rawOverall.toDouble()
+        : (rawOverall is String ? (double.tryParse(rawOverall.trim()) ?? -1) : -1);
     if (overall < 0) {
       final weights = rubric.normalisedWeights();
       overall = dims.fold<double>(
           0, (sum, d) => sum + d.score * (weights[d.dimension] ?? 0));
     }
 
-    final arc = ((parsed['emotionArc'] as List?) ?? const [])
-        .map((e) => EmotionPoint.fromJson(e as Map<String, dynamic>))
-        .toList();
+    final arc = <EmotionPoint>[];
+    for (final m in maps('emotionArc')) {
+      try {
+        arc.add(EmotionPoint.fromJson(m));
+      } catch (_) {}
+    }
 
     return Analysis(
       id: 'an-${_uuid.v4()}',
       sessionId: session.id,
-      headline: (parsed['headline'] as String?) ?? '',
-      summary: (parsed['summary'] as String?) ?? '',
+      headline: (parsed['headline'] ?? '').toString(),
+      summary: (parsed['summary'] ?? '').toString(),
       topics: strs('topics'),
       decisions: strs('decisions'),
       actionItems: strs('actionItems'),
@@ -272,22 +300,28 @@ class AnalysisOrchestrator {
 
   List<Recommendation> _buildRecommendations(
       String sessionId, Map<String, dynamic> parsed) {
-    final list = (parsed['recommendations'] as List?) ?? const [];
+    final raw = parsed['recommendations'];
+    final list = raw is List ? raw.whereType<Map<String, dynamic>>() : const [];
     final recs = <Recommendation>[];
     var i = 0;
-    for (final r in list) {
-      final m = r as Map<String, dynamic>;
+    for (final m in list) {
+      i++;
+      final p = m['priority'];
+      final priority = p is num
+          ? p.toInt()
+          : (p is String ? (int.tryParse(p.trim()) ?? i) : i);
+      final text = (m['text'] ?? '').toString().trim();
+      if (text.isEmpty) continue;
+      final ev = m['evidenceRefs'] ?? m['evidenceSegmentIds'];
+      final tryInstead = m['whatToTryInstead'];
       recs.add(Recommendation(
         id: 'rec-${_uuid.v4()}',
         sessionId: sessionId,
-        priority: (m['priority'] as num?)?.toInt() ?? (i + 1),
-        text: (m['text'] as String?) ?? '',
-        evidenceRefs: ((m['evidenceRefs'] as List?) ?? const [])
-            .map((e) => e.toString())
-            .toList(),
-        whatToTryInstead: m['whatToTryInstead'] as String?,
+        priority: priority,
+        text: text,
+        evidenceRefs: ev is List ? ev.map((e) => e.toString()).toList() : const [],
+        whatToTryInstead: tryInstead == null ? null : tryInstead.toString(),
       ));
-      i++;
     }
     return recs;
   }
