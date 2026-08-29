@@ -96,6 +96,12 @@ class AppState extends ChangeNotifier {
   /// so transcription/analysis failures are diagnosable on-device.
   final Map<String, String> analysisErrors = {};
 
+  /// On-device transcription-model (Whisper) state. No download progress is
+  /// available from the plugin, so [whisperDownloading] drives a spinner.
+  bool whisperInstalled = false;
+  bool whisperDownloading = false;
+  String? whisperError;
+
   Future<void> init() async {
     await database.open();
     repo = Repository(database);
@@ -115,6 +121,7 @@ class AppState extends ChangeNotifier {
       await selectProvider(ProviderConfig.localGemma().id);
     }
     gemmaInstalled = await LocalModels.instance.isGemmaInstalled();
+    whisperInstalled = await LocalModels.instance.isWhisperInstalled();
 
     _ready = true;
     notifyListeners();
@@ -343,6 +350,25 @@ class AppState extends ChangeNotifier {
     } finally {
       gemmaDownloadPercent = null;
       gemmaInstalled = await LocalModels.instance.isGemmaInstalled();
+      notifyListeners();
+    }
+  }
+
+  /// Downloads the on-device transcription model (Whisper). No progress is
+  /// reported by the plugin, so this just toggles [whisperDownloading].
+  Future<void> installWhisper() async {
+    whisperError = null;
+    whisperDownloading = true;
+    notifyListeners();
+    try {
+      await LocalModels.instance.ensureWhisperReady();
+      whisperInstalled = true;
+    } catch (e, st) {
+      whisperError = e.toString();
+      debugPrint('[LOCAL] whisper install failed: $e\n$st');
+    } finally {
+      whisperDownloading = false;
+      whisperInstalled = await LocalModels.instance.isWhisperInstalled();
       notifyListeners();
     }
   }

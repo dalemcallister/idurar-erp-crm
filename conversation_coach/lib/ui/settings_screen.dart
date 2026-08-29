@@ -145,14 +145,60 @@ class _OnDeviceSection extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Transcription model — Whisper base',
-                    style: TextStyle(fontWeight: FontWeight.w600)),
-                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    const Expanded(
+                      child: Text('Transcription model — Whisper base',
+                          style: TextStyle(fontWeight: FontWeight.w600)),
+                    ),
+                    if (state.whisperInstalled && !state.whisperDownloading)
+                      const Icon(Icons.check_circle,
+                          color: Color(0xFF2E7D5B), size: 20),
+                  ],
+                ),
+                const SizedBox(height: 2),
                 Text(
-                  'About 140 MB. Downloads automatically the first time you '
-                  'record, then transcribes every conversation on-device.',
+                  state.whisperInstalled
+                      ? 'Installed · transcribes every recording on-device'
+                      : 'About 148 MB. Needed to transcribe recordings. '
+                          'Download over Wi-Fi before recording.',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
+                const SizedBox(height: 12),
+                if (state.whisperDownloading)
+                  Row(
+                    children: const [
+                      SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2)),
+                      SizedBox(width: 10),
+                      Text('Downloading… (~148 MB)'),
+                    ],
+                  )
+                else if (!state.whisperInstalled)
+                  FilledButton.icon(
+                    onPressed: () async {
+                      await state.installWhisper();
+                      if (state.whisperError != null && context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                          content:
+                              Text('Download failed: ${state.whisperError}'),
+                          duration: const Duration(seconds: 10),
+                        ));
+                      }
+                    },
+                    icon: const Icon(Icons.download),
+                    label: const Text('Download transcription model'),
+                  ),
+                if (state.whisperError != null && !state.whisperDownloading) ...[
+                  const SizedBox(height: 8),
+                  SelectableText(
+                    'Download failed:\n${state.whisperError}',
+                    style: const TextStyle(
+                        fontSize: 12, color: Color(0xFFB44A3F)),
+                  ),
+                ],
               ],
             ),
           ),

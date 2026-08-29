@@ -140,11 +140,34 @@ class LocalModels {
 
   // ---- Transcription model (Whisper) --------------------------------------
 
+  /// True when the Whisper ggml model file is present on disk.
+  Future<bool> isWhisperInstalled() async {
+    try {
+      final path = await _whisper.getPath(whisperModel);
+      return File(path).existsSync();
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Downloads the Whisper model if it isn't already present. whisper_ggml does
+  /// NOT auto-download in this version — transcribe() just fails to load a
+  /// missing file — so we fetch it explicitly. (No progress callback is exposed
+  /// by the plugin, so callers show an indeterminate state.)
+  Future<void> ensureWhisperReady() async {
+    if (await isWhisperInstalled()) return;
+    debugPrint('[WHISPER] model missing — downloading $whisperModel …');
+    await _whisper.downloadModel(whisperModel);
+    debugPrint('[WHISPER] model download complete');
+  }
+
   /// Transcribes a local audio file entirely on-device.
   Future<TranscriptionResult> transcribeFile({
     required String audioPath,
     required List<String> languages,
   }) async {
+    // Make sure the model is on disk first (first run downloads ~148 MB).
+    await ensureWhisperReady();
     final lang = languages.isEmpty ? 'auto' : languages.first;
 
     // Diagnostics (visible in `flutter run` logs): confirm the audio file is
