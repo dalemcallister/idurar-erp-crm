@@ -301,7 +301,9 @@ class AnalysisOrchestrator {
   List<Recommendation> _buildRecommendations(
       String sessionId, Map<String, dynamic> parsed) {
     final raw = parsed['recommendations'];
-    final list = raw is List ? raw.whereType<Map<String, dynamic>>() : const [];
+    final list = raw is List
+        ? raw.whereType<Map<String, dynamic>>()
+        : const <Map<String, dynamic>>[];
     final recs = <Recommendation>[];
     var i = 0;
     for (final m in list) {
