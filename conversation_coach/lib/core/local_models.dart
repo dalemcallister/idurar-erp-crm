@@ -24,8 +24,17 @@ class LocalModels {
   /// sweet spot for a phone; swap the URL/type to trade up (e.g. Gemma3n E2B)
   /// or down (Qwen3 0.6B). LiteRT-LM `.litertlm` format.
   static const String gemmaModelId = 'gemma3-1b-it';
-  static const String gemmaModelUrl =
-      'https://huggingface.co/litert-community/Gemma3-1B-IT/resolve/main/model.litertlm';
+
+  /// Default download URL for the analysis model — a portable 4-bit,
+  /// 4096-context LiteRT-LM build of Gemma 3 1B. Override the exact filename at
+  /// build time with `--dart-define=GEMMA_MODEL_URL=<resolve/main/... url>`
+  /// (use the `/resolve/main/` form, not `/blob/main/`) without a code change.
+  static const String _defaultGemmaModelUrl =
+      'https://huggingface.co/litert-community/Gemma3-1B-IT/resolve/main/'
+      'Gemma3-1B-IT_multi-prefill-seq_q4_ekv4096.litertlm';
+  static const String _urlOverride = String.fromEnvironment('GEMMA_MODEL_URL');
+  static String get gemmaModelUrl =>
+      _urlOverride.isNotEmpty ? _urlOverride : _defaultGemmaModelUrl;
 
   /// Optional HuggingFace token, ONLY used to *download* a gated model (never
   /// for inference). Pass at build time with
@@ -90,7 +99,7 @@ class LocalModels {
   Future<InferenceModel> _ensureGemma() async {
     await initEngine();
     return _gemma ??= await FlutterGemma.getActiveModel(
-      maxTokens: 2048,
+      maxTokens: 4096,
       preferredBackend: PreferredBackend.gpu,
     );
   }
