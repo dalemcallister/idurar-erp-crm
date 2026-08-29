@@ -150,9 +150,14 @@ class LocalModels {
       lang: lang,
       withSegments: true,
     );
+    if (result == null) {
+      throw Exception(
+          'On-device transcription produced no result — the Whisper model may '
+          'still be downloading. Wait for Wi-Fi to finish, then retry.');
+    }
 
     final turns = <TranscriptTurn>[];
-    final segments = result?.transcription.segments ?? const [];
+    final segments = result.transcription.segments ?? const [];
     for (final s in segments) {
       final text = s.text.trim();
       if (text.isEmpty) continue;
@@ -165,7 +170,7 @@ class LocalModels {
     }
     // Fallback: a flat transcript with no segment timings still yields a turn.
     if (turns.isEmpty) {
-      final flat = (result?.transcription.text ?? '').trim();
+      final flat = result.transcription.text.trim();
       if (flat.isNotEmpty) {
         turns.add(TranscriptTurn(
             startMs: 0, endMs: 0, speakerTag: 'S1', text: flat));
