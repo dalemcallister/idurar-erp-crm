@@ -30,19 +30,36 @@ The tracked files (`Info.plist`, `AndroidManifest.xml`, `pubspec.yaml`) are
 already updated. The generated project files below are **not** in the repo, so
 apply these on your machine.
 
-### iOS (`ios/Podfile`)
-- Raise the platform and use static frameworks (required by `flutter_gemma`):
-  ```ruby
-  platform :ios, '15.6'          # whisper_ggml needs 15.6; gemma needs 15+
-  use_frameworks! :linkage => :static
-  ```
-- Set the deployment target to **15.6** for the Runner target in Xcode too.
-- For large models, add to `ios/Runner/Runner.entitlements`:
-  ```xml
-  <key>com.apple.developer.kernel.extended-virtual-addressing</key>
-  <true/>
-  ```
+### iOS (`ios/Podfile`) — confirmed working config
+```ruby
+platform :ios, '15.6'   # whisper_ggml needs 15.6; gemma needs 15+
+...
+target 'Runner' do
+  use_frameworks!        # DYNAMIC — see note below. Do NOT use :linkage => :static.
+  ...
+end
+
+post_install do |installer|
+  installer.pods_project.targets.each do |target|
+    flutter_additional_ios_build_settings(target)
+    target.build_configurations.each do |config|
+      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.6'
+    end
+  end
+end
+```
+
+> **Critical — use DYNAMIC frameworks, not static.** flutter_gemma's docs suggest
+> `use_frameworks! :linkage => :static`, but static linking dead-strips
+> `whisper_ggml`'s FFI entry symbol (looked up at runtime via
+> `dlsym(RTLD_DEFAULT, 'request')`), so transcription returns null on-device
+> with `Failed to lookup symbol 'request'`. Plain `use_frameworks!` (dynamic)
+> exports the symbol AND still links Gemma's LiteRT-LM libs fine — both work.
+
+- Set the Runner target's **Minimum Deployment** to iOS **15.6** in Xcode.
 - Then: `cd ios && pod install && cd ..`
+- The `extended-virtual-addressing` entitlement was **not** needed for Gemma 4
+  E2B on a 16 GB device; add it only if a larger model fails to load for memory.
 
 ### Android — confirmed working config
 
