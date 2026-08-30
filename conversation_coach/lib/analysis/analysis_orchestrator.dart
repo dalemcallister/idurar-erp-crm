@@ -222,6 +222,13 @@ class AnalysisOrchestrator {
       if (parsed != null) return parsed;
     }
 
+    // 3. Resilient fallback: the model sometimes drops a closing bracket or
+    //    strews stray commas, which no comma fix can undo. Harvest each known
+    //    field directly from the raw text so a structural error in one field
+    //    never loses the whole analysis.
+    final extracted = _extractFields(t);
+    if (extracted.isNotEmpty) return extracted;
+
     // Include a snippet of what the model actually returned so the failure is
     // diagnosable on-device.
     final snippet =
@@ -230,6 +237,100 @@ class AnalysisOrchestrator {
     throw LLMException(
         'Could not parse analysis JSON from the on-device model. It returned:\n'
         '$shown');
+  }
+
+  /// Known top-level analysis keys, used to bound each field's span when
+  /// harvesting from malformed JSON.
+  static const List<String> _analysisKeys = [
+    'headline', 'summary', 'topics', 'openQuestions', 'strengths',
+    'improvements', 'nextSteps', 'recommendations', 'scoreOverall',
+    'scoreByDimension',
+  ];
+
+  /// Harvests each known field straight from the raw model text — tolerant of
+  /// missing brackets, stray commas and other structural slips that defeat a
+  /// strict JSON parse. Returns whatever fields it could recover.
+  Map<String, dynamic> _extractFields(String raw) {
+    final map = <String, dynamic>{};
+
+    String? scalar(String key) =>
+        RegExp('"$key"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"')
+            .firstMatch(raw)
+            ?.group(1)
+            ?.trim();
+
+    final headline = scalar('headline');
+    if (headline != null && headline.isNotEmpty) map['headline'] = headline;
+    final summary = scalar('summary');
+    if (summary != null && summary.isNotEmpty) map['summary'] = summary;
+
+    final so = RegExp(r'"scoreOverall"\s*:\s*"?(\d+)').firstMatch(raw);
+    if (so != null) map['scoreOverall'] = int.parse(so.group(1)!);
+
+    // Earliest known key at/after [from] — bounds a field's text span.
+    int nextKey(int from) {
+      var best = raw.length;
+      for (final k in _analysisKeys) {
+        final i = raw.indexOf('"$k"', from);
+        if (i >= 0 && i < best) best = i;
+      }
+      return best;
+    }
+
+    List<String> stringArray(String key) {
+      final ki = raw.indexOf('"$key"');
+      if (ki < 0) return const [];
+      final from = ki + key.length + 2;
+      final span = raw.substring(from, nextKey(from));
+      return RegExp(r'"((?:[^"\\]|\\.)*)"')
+          .allMatches(span)
+          .map((m) => m.group(1)!.trim())
+          .where((s) => s.isNotEmpty)
+          .toList();
+    }
+
+    for (final key in const [
+      'topics', 'openQuestions', 'strengths', 'improvements', 'nextSteps'
+    ]) {
+      final arr = stringArray(key);
+      if (arr.isNotEmpty) map[key] = arr;
+    }
+
+    // scoreByDimension: pull each dimension/score/rationale triple in order.
+    final di = raw.indexOf('"scoreByDimension"');
+    if (di >= 0) {
+      final span = raw.substring(di);
+      final dims = <Map<String, dynamic>>[];
+      final re = RegExp(
+          r'"dimension"\s*:\s*"([^"]*)"[\s\S]*?"score"\s*:\s*"?(\d+)"?[\s\S]*?"rationale"\s*:\s*"((?:[^"\\]|\\.)*)"');
+      for (final m in re.allMatches(span)) {
+        dims.add({
+          'dimension': m.group(1),
+          'score': int.parse(m.group(2)!),
+          'rationale': m.group(3),
+        });
+      }
+      if (dims.isNotEmpty) map['scoreByDimension'] = dims;
+    }
+
+    // recommendations: pull each priority/text/(whatToTryInstead) group.
+    final rci = raw.indexOf('"recommendations"');
+    if (rci >= 0) {
+      final span = raw.substring(rci, nextKey(rci + 17));
+      final recs = <Map<String, dynamic>>[];
+      final re = RegExp(
+          r'"priority"\s*:\s*"?(\d+)"?[\s\S]*?"text"\s*:\s*"((?:[^"\\]|\\.)*)"(?:[\s\S]*?"whatToTryInstead"\s*:\s*"((?:[^"\\]|\\.)*)")?');
+      for (final m in re.allMatches(span)) {
+        recs.add({
+          'priority': int.parse(m.group(1)!),
+          'text': m.group(2),
+          'whatToTryInstead': m.group(3),
+        });
+      }
+      if (recs.isNotEmpty) map['recommendations'] = recs;
+    }
+
+    return map;
   }
 
   Analysis _buildAnalysis({
