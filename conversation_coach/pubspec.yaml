@@ -4,7 +4,7 @@ description: >-
   Record a conversation over a USB-C mic, set a goal, and get an evidence-backed,
   Claude-powered analysis with a per-session "ask the conversation" Q&A.
 publish_to: "none"
-version: 2.0.0+2
+version: 2.0.0+3
 
 environment:
   sdk: ">=3.7.0 <4.0.0"
