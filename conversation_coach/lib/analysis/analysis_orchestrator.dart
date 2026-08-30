@@ -205,11 +205,18 @@ class AnalysisOrchestrator {
     final end = t.lastIndexOf('}');
     if (start >= 0 && end > start) {
       var body = t.substring(start, end + 1);
-      // Insert missing commas between a value/array/object end and the next key
-      // on a new line — small models frequently drop them.
+      // Repair the small-model JSON slips seen in practice, in order:
+      // 1. Missing OPENING quote on a bareword string element — a value after
+      //    a `[` or `,` that starts with a letter and ends with `"`.
+      body = body.replaceAllMapped(
+          RegExp(r'([\[,]\s*\n\s*)([A-Za-z][^\n]*?")(\s*[,\]\n])'),
+          (m) => '${m[1]}"${m[2]}${m[3]}');
+      // 2. Missing commas between a value/array/object end and the next key.
       body = body.replaceAllMapped(
           RegExp(r'([}\]"\d])\s*\n(\s*")'), (m) => '${m[1]},\n${m[2]}');
-      // Drop trailing commas before a } or ].
+      // 3. Doubled / empty commas (e.g. a stray "," on its own line).
+      body = body.replaceAll(RegExp(r',(\s*,)+'), ',');
+      // 4. Trailing commas before a } or ].
       body = body.replaceAll(RegExp(r',(\s*[}\]])'), r'$1');
       final parsed = tryDecode(body);
       if (parsed != null) return parsed;
