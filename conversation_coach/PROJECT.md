@@ -3,7 +3,7 @@
 The living record of this project. **Read this first** each session; update it
 when meaningful work lands. Chat context is ephemeral — this file is the memory.
 
-_Last updated: 2026-08-31._
+_Last updated: 2026-08-31 (added communication persona pillar)._
 
 ---
 
@@ -92,7 +92,28 @@ is one file):
 - LinkedIn: "Add to profile / certifications" deep link or share; Facebook:
   share dialog.
 
-### 5. Distribution & store readiness
+### 5. Communication persona & longitudinal "who I want to be" feedback
+A persistent, on-device **communication persona** that evolves from every
+session, giving identity-level feedback across three questions:
+- **"How am I going?"** — trends across sessions (rubric dimensions, talk-time,
+  questions, filler, empathy, recurring strengths/patterns) as an evolving
+  narrative of the user's style.
+- **"Am I who I want to be?"** — the user defines an **aspirational self**
+  (target traits/values/role, editable); the app does a **gap analysis** between
+  the observed persona and that aspiration. The user sets the aspiration — the
+  app never imposes values.
+- **"How do I improve?"** — focused, evidence-backed practice tied to the gap
+  and to the skills/badges model (roadmap #3).
+
+Design notes:
+- **Hierarchical summarisation** — store a compact per-session *digest*, then
+  synthesise the persona from digests. Avoids on-device context overflow from
+  feeding many full sessions to a small model.
+- Recompute after each session or on a schedule, not every app open.
+- Supportive, evidence-backed, non-judgmental tone; self-directed aspiration.
+- Privacy invariant holds: computed entirely on-device from local data.
+
+### 6. Distribution & store readiness
 - **Un-gated on-device model** so no HF token ships (prerequisite for wide
   distribution). Rotate the current HF token.
 - App Store / Play Store: icons ✅, privacy nutrition labels are simple (on-device),
@@ -119,3 +140,5 @@ is one file):
   badge-only backend (more credible, adds infra) — pick before building sharing.
 - Which proprietary-tuning path (prompt library vs RAG vs LoRA) to invest in first.
 - Un-gated model choice for distribution (host our own vs. an un-gated repo).
+- Persona: how the aspirational self is captured (onboarding prompt, chips,
+  free-text), and the recompute cadence (per-session vs weekly).
