@@ -14,22 +14,24 @@ class PromptRegistry {
   /// timestamp and (optionally) segment id so the model can cite evidence by id,
   /// and the offline mock can parse it back out.
   ///
-  /// [withIds] controls whether the segment id is included. The cloud prompt
-  /// cites evidence by id so it needs them, but the segment ids are UUIDs
-  /// (~50 chars/line) — on a small on-device window that overhead alone can
-  /// double the token count, and the compact on-device prompts don't cite ids,
-  /// so they render with `withIds: false`.
+  /// [withIds] selects the render mode. The cloud prompt cites evidence by
+  /// segment id and shows timestamps, so it uses the full form
+  /// `[12.3s] (seg-uuid) Speaker: text`. On the tiny on-device window both the
+  /// UUID ids (~40 chars/line) and the timestamps tokenize very heavily (a
+  /// `[12.3s]` prefix is ~7 tokens) yet the compact on-device prompt cites
+  /// neither — so `withIds: false` renders the lean `Speaker: text`, which
+  /// roughly halves the token count of a long transcript.
   static String renderTranscript(
       List<Segment> segments, Map<String, Speaker> speakers,
       {bool withIds = true}) {
     final b = StringBuffer();
     for (final s in segments) {
       final sp = speakers[s.speakerId]?.label ?? 'Speaker';
-      final sec = (s.startMs / 1000).toStringAsFixed(1);
       if (withIds) {
+        final sec = (s.startMs / 1000).toStringAsFixed(1);
         b.writeln('[${sec}s] (${s.id}) $sp: ${s.text}');
       } else {
-        b.writeln('[${sec}s] $sp: ${s.text}');
+        b.writeln('$sp: ${s.text}');
       }
     }
     return b.toString();

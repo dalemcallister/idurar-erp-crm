@@ -147,17 +147,34 @@ class AnalysisOrchestrator {
     return analysis;
   }
 
-  // On-device context budget (Gemma 4 E2B: 4096-token window). Char budgets
-  // are conservative (~3.3 chars/token) and assume the id-free transcript the
-  // local prompts render. See PromptRegistry.renderTranscript(withIds: false).
-  static const int _directCharBudget = 6500; // transcript fits one analysis call
-  static const int _chunkCharBudget = 9000; // per MAP (digest) call
-  static const int _reduceCharBudget = 6500; // joined digests for the REDUCE call
+  // On-device context budget (Gemma 4 E2B: 4096-token INPUT limit). Char
+  // budgets are deliberately conservative because real transcripts tokenize
+  // heavily — a "Teaching" recording measured ~1.6 chars/token (timestamps,
+  // short turns, non-English all inflate it), far worse than the ~3-4 of clean
+  // English prose. These leave room for the system prompt and the reserved
+  // output inside 4096; the adaptive overflow retry below is the real safety
+  // net, so exact calibration doesn't matter — it only affects how many chunks
+  // we split into. Budgets assume the lean id/timestamp-free local render.
+  static const int _directCharBudget = 3500; // transcript fits one analysis call
+  static const int _chunkCharBudget = 4500; // per MAP (digest) call
+  static const int _reduceCharBudget = 3500; // joined digests for the REDUCE call
+
+  /// True when a failure is the model rejecting an over-long input (as opposed
+  /// to a transient/other error). LiteRT-LM surfaces it as
+  /// `INVALID_ARGUMENT: Input token ids are too long`.
+  static bool _isOverflow(Object e) {
+    final s = e.toString().toLowerCase();
+    return s.contains('token ids are too long') ||
+        (s.contains('invalid_argument') && s.contains('token'));
+  }
 
   /// Runs the analysis on a small on-device model, fitting it into the tiny
   /// context window. Short transcripts go in a single call; long ones are
   /// map-reduced: MAP each windowed chunk to a compact digest, then REDUCE the
-  /// digests into the structured analysis. Full coverage, no overflow.
+  /// digests into the structured analysis. Every model call is guarded by an
+  /// adaptive retry that splits/shrinks the input on overflow, so a heavier
+  /// tokenizer or a longer meeting can never produce the "token ids are too
+  /// long" failure — it just costs more calls.
   Future<PromptResponse> _analyzeOnDevice({
     required LLMProvider provider,
     required Session session,
@@ -167,49 +184,49 @@ class AnalysisOrchestrator {
     required Map<String, Speaker> speakers,
     String? modelOverride,
   }) async {
+    PromptRequest analysisReq(List<Segment> segs, List<String>? digests) =>
+        PromptRegistry.analysis(
+          session: session,
+          goal: goal,
+          rubric: rubric,
+          segments: segs,
+          speakers: speakers,
+          modelOverride: modelOverride,
+          simple: true,
+          digests: digests,
+        );
+
     final full =
         PromptRegistry.renderTranscript(segments, speakers, withIds: false);
 
-    // Short enough for one direct analysis call.
+    // Short enough for one direct analysis call. On overflow (a heavier
+    // tokenizer than the char budget assumed), fall through to map-reduce.
     if (full.length <= _directCharBudget) {
-      final req = PromptRegistry.analysis(
-        session: session,
-        goal: goal,
-        rubric: rubric,
-        segments: segments,
-        speakers: speakers,
-        modelOverride: modelOverride,
-        simple: true,
-      );
-      return _completeWithRetry(provider, req);
+      try {
+        return await _completeWithRetry(provider, analysisReq(segments, null));
+      } catch (e) {
+        if (!_isOverflow(e)) rethrow;
+        debugPrint('[MAPREDUCE] direct call overflowed — map-reducing instead');
+      }
     }
 
-    // Long meeting: MAP each windowed chunk to a digest.
+    // MAP: digest each windowed chunk (each digest call self-splits on overflow).
     final chunks =
         _chunkSegments(segments, speakers, maxChars: _chunkCharBudget);
     debugPrint('[MAPREDUCE] transcript ${full.length} chars → '
         '${chunks.length} chunks');
     final digests = <String>[];
     for (var i = 0; i < chunks.length; i++) {
-      final req = PromptRegistry.digestChunk(
-        session: session,
-        goal: goal,
-        rubric: rubric,
-        segments: chunks[i],
-        speakers: speakers,
-        partIndex: i + 1,
-        partCount: chunks.length,
-        modelOverride: modelOverride,
-      );
       try {
-        final r = await _completeWithRetry(provider, req);
-        final d = r.text.trim();
-        if (d.isNotEmpty) digests.add(d);
+        final d = await _digestAdaptive(
+            provider, session, goal, rubric, chunks[i], speakers,
+            part: i + 1, count: chunks.length);
+        if (d.trim().isNotEmpty) digests.add(d.trim());
         debugPrint('[MAPREDUCE] digest ${i + 1}/${chunks.length} '
-            '(${d.length} chars)');
+            '(${d.trim().length} chars)');
       } catch (e) {
-        // One chunk failing to digest shouldn't lose the whole analysis — the
-        // remaining digests still cover most of the conversation.
+        // One chunk failing shouldn't lose the whole analysis — the rest still
+        // cover most of the conversation.
         debugPrint('[MAPREDUCE] digest ${i + 1}/${chunks.length} failed: $e');
       }
     }
@@ -217,34 +234,69 @@ class AnalysisOrchestrator {
     // If digesting produced nothing usable, fall back to a sampled direct call
     // so the user still gets an analysis rather than an error.
     if (digests.isEmpty) {
-      final sampled =
-          _sampleSegments(segments, speakers, maxChars: _directCharBudget);
-      final req = PromptRegistry.analysis(
+      return _completeWithRetry(provider,
+          analysisReq(_sampleSegments(segments, speakers, maxChars: _directCharBudget), null));
+    }
+
+    // REDUCE: analyse from the digests, shrinking on overflow until it fits.
+    var fitted = _fitDigests(digests, _reduceCharBudget);
+    while (true) {
+      try {
+        return await _completeWithRetry(provider, analysisReq(const [], fitted));
+      } catch (e) {
+        if (!_isOverflow(e) || fitted.length <= 1) rethrow;
+        final target = (fitted.fold<int>(0, (a, d) => a + d.length) ~/ 2)
+            .clamp(400, _reduceCharBudget);
+        final shrunk = _fitDigests(fitted, target);
+        // Guarantee forward progress even if the budget math didn't drop one.
+        fitted = shrunk.length < fitted.length
+            ? shrunk
+            : fitted.sublist(0, fitted.length - 1);
+        debugPrint('[MAPREDUCE] reduce overflowed — shrank to '
+            '${fitted.length} digests');
+      }
+    }
+  }
+
+  /// Digests one chunk; on context overflow it splits the chunk in half and
+  /// digests each half, so an over-long chunk (heavier tokenizer than assumed)
+  /// still succeeds. Concatenates the sub-digests.
+  Future<String> _digestAdaptive(
+    LLMProvider provider,
+    Session session,
+    Goal goal,
+    Rubric rubric,
+    List<Segment> chunk,
+    Map<String, Speaker> speakers, {
+    required int part,
+    required int count,
+  }) async {
+    try {
+      final req = PromptRegistry.digestChunk(
         session: session,
         goal: goal,
         rubric: rubric,
-        segments: sampled,
+        segments: chunk,
         speakers: speakers,
-        modelOverride: modelOverride,
-        simple: true,
+        partIndex: part,
+        partCount: count,
+        modelOverride: null,
       );
-      return _completeWithRetry(provider, req);
+      final r = await _completeWithRetry(provider, req);
+      return r.text;
+    } catch (e) {
+      if (!_isOverflow(e) || chunk.length <= 1) rethrow;
+      debugPrint('[MAPREDUCE] chunk part $part too big (${chunk.length} segs) '
+          '— splitting');
+      final mid = chunk.length ~/ 2;
+      final a = await _digestAdaptive(
+          provider, session, goal, rubric, chunk.sublist(0, mid), speakers,
+          part: part, count: count);
+      final b = await _digestAdaptive(
+          provider, session, goal, rubric, chunk.sublist(mid), speakers,
+          part: part, count: count);
+      return '$a\n$b';
     }
-
-    // REDUCE: analyse from the digests. Guard against a very long meeting
-    // producing more digests than the window holds by trimming the middle.
-    final fitted = _fitDigests(digests, _reduceCharBudget);
-    final reduceReq = PromptRegistry.analysis(
-      session: session,
-      goal: goal,
-      rubric: rubric,
-      segments: const [],
-      speakers: speakers,
-      modelOverride: modelOverride,
-      simple: true,
-      digests: fitted,
-    );
-    return _completeWithRetry(provider, reduceReq);
   }
 
   /// Splits segments into consecutive runs whose id-free rendered transcript
@@ -363,8 +415,11 @@ class AnalysisOrchestrator {
         return await provider.complete(request);
       } on LLMException catch (e) {
         last = e;
-        // Don't retry auth/validation errors.
-        if (e.statusCode == 401 || e.statusCode == 400) rethrow;
+        // Don't retry auth/validation errors, or a deterministic context
+        // overflow (the caller shrinks the input and retries instead).
+        if (e.statusCode == 401 || e.statusCode == 400 || _isOverflow(e)) {
+          rethrow;
+        }
         await Future<void>.delayed(Duration(seconds: 1 << attempt));
         attempt++;
       }

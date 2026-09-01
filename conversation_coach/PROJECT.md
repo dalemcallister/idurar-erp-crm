@@ -147,6 +147,17 @@ Design notes:
   config that falls back to the offline mock (model not downloaded) or to cloud
   takes the standard full-transcript path. The per-chunk digests are the same
   raw material the **communication persona** (roadmap #5) will reuse.
+- **2026-09 (follow-up):** first cut still overflowed at 5828 tokens — real
+  transcripts tokenize far heavier than assumed (a "Teaching" recording ≈ **1.6
+  chars/token**, not ~3). Three hardening changes: (a) the local render also
+  **drops timestamps** (`[12.3s]` ≈ 7 tokens/line and the compact prompt never
+  cites them) — lean `Speaker: text`; (b) char budgets tightened (direct/reduce
+  3500, chunk 4500); (c) **every on-device call is now self-correcting** —
+  `_isOverflow` detection plus adaptive retry: the direct call falls through to
+  map-reduce on overflow, a too-big chunk (`_digestAdaptive`) splits in half and
+  recurses, and the reduce shrinks its digests until it fits. Char calibration
+  no longer matters for correctness — only for how many splits happen. Overflow
+  errors are also excluded from `_completeWithRetry`'s backoff (deterministic).
 
 ---
 
