@@ -43,16 +43,19 @@ In Xcode: select the **Runner** target → **Signing & Capabilities**:
 ## Every time you want to push a new test build
 
 ### 4. Bump the build number
-TestFlight rejects a re-used build number. In `pubspec.yaml`, the version is
-`0.1.0+1` — the number **after the `+`** is the build. Bump it each upload
-(`0.1.0+2`, `0.1.0+3`, …).
+TestFlight rejects a re-used build number. In `pubspec.yaml` the version is
+`2.0.0+N` — the number **after the `+`** is the build. Bump it each upload
+(`2.0.0+4`, `2.0.0+5`, …). Any Dart/Podfile/Gradle change needs a fresh build
+uploaded — the store never pushes code changes on its own.
 
 ### 5. Build the signed .ipa
 ```bash
-flutter build ipa
+flutter build ipa --dart-define=HUGGINGFACE_TOKEN=hf_xxxxx
 ```
-This produces `build/ios/ipa/conversation_coach.ipa`. (If signing errors appear,
-open the workspace and archive from Xcode instead: **Product → Archive**.)
+The `--dart-define` is required so the app can download the (gated) on-device
+Gemma model; without it the download 401s on the tester's phone. This produces
+`build/ios/ipa/conversation_coach.ipa`. (If signing errors appear, open the
+workspace and archive from Xcode instead: **Product → Archive**.)
 
 ### 6. Upload to App Store Connect
 Easiest: open the free **Transporter** app (Mac App Store), sign in with your
@@ -83,18 +86,21 @@ Builds expire **90 days** after upload; just upload a fresh build to renew.
 
 ---
 
-## What your friend needs to know (bring-your-own-key)
+## What your tester needs to know (v2 — fully on-device)
 
-There's no shared backend — each tester uses their **own** API keys, entered
-in-app:
+No accounts, no API keys, no shared backend. Everything runs on the phone.
+First-run steps for the tester:
 
-- **Settings → Model & provider → Add key** — an **Anthropic** key (for the
-  Claude analysis). Without it the app runs on the built-in **offline demo**
-  (canned analysis), which is fine for a first look.
-- **Settings → Transcription engine → Cloud (Whisper) → Add key** — an
-  **OpenAI** key, to transcribe the real recording. Without it, transcription
-  uses the demo transcript.
-- Keys are stored only in the iOS Keychain, never in the app's data or sent
-  anywhere except the provider they belong to.
-- If you set a **prepaid budget** (Settings → Spending budget), each analysed
-  session draws it down — make sure there's headroom or recording is gated.
+1. Open the app → **Settings → On-device models → Download analysis model**
+   (Gemma, ~2.4 GB — do it on Wi-Fi; it's a one-time download). The
+   transcription model (Whisper, ~148 MB) downloads automatically the first
+   time they record.
+2. Set a goal, record a conversation, and the whole pipeline
+   (transcribe → analyse → Ask) runs locally.
+
+Privacy: the audio and transcript never leave the device — only the tester's
+own phone does the analysis.
+
+> Note: the app currently ships with a HuggingFace token baked in at build time
+> (`--dart-define`) purely to fetch the gated model. Swap to an un-gated model
+> before any wide/public distribution so no token ships (PROJECT.md roadmap #6).
