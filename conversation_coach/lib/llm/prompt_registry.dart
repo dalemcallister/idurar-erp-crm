@@ -11,18 +11,37 @@ class PromptRegistry {
   static const String version = 'v2';
 
   /// Renders the transcript in a stable, parseable form. Each line carries its
-  /// timestamp and segment id so the model can cite evidence by id, and the
-  /// offline mock can parse it back out.
+  /// timestamp and (optionally) segment id so the model can cite evidence by id,
+  /// and the offline mock can parse it back out.
+  ///
+  /// [withIds] controls whether the segment id is included. The cloud prompt
+  /// cites evidence by id so it needs them, but the segment ids are UUIDs
+  /// (~50 chars/line) — on a small on-device window that overhead alone can
+  /// double the token count, and the compact on-device prompts don't cite ids,
+  /// so they render with `withIds: false`.
   static String renderTranscript(
-      List<Segment> segments, Map<String, Speaker> speakers) {
+      List<Segment> segments, Map<String, Speaker> speakers,
+      {bool withIds = true}) {
     final b = StringBuffer();
     for (final s in segments) {
       final sp = speakers[s.speakerId]?.label ?? 'Speaker';
       final sec = (s.startMs / 1000).toStringAsFixed(1);
-      b.writeln('[${sec}s] (${s.id}) $sp: ${s.text}');
+      if (withIds) {
+        b.writeln('[${sec}s] (${s.id}) $sp: ${s.text}');
+      } else {
+        b.writeln('[${sec}s] $sp: ${s.text}');
+      }
     }
     return b.toString();
   }
+
+  /// The user's speaker label (the person being coached), or a fallback.
+  static String _userLabel(Map<String, Speaker> speakers) =>
+      speakers.values.isEmpty
+          ? 'the user'
+          : speakers.values
+              .firstWhere((s) => s.isUser, orElse: () => speakers.values.first)
+              .label;
 
   /// The core analysis prompt (summary, content, intent, emotion, dynamics,
   /// goal score, recommendations) — F-ANA-01..06, F-REC-01/02.
@@ -34,17 +53,16 @@ class PromptRegistry {
     required Map<String, Speaker> speakers,
     String? modelOverride,
     bool simple = false,
+    List<String>? digests,
   }) {
-    final transcript = renderTranscript(segments, speakers);
+    // Local prompts render without the UUID segment ids (they don't cite them,
+    // and the ids blow the small context window); the cloud prompt keeps them.
+    final transcript = renderTranscript(segments, speakers, withIds: !simple);
     final dims = rubric.dimensions
         .map((d) => '- ${d.name} (weight ${d.weight}): ${d.description}')
         .join('\n');
 
-    final userLabel = speakers.values.isEmpty
-        ? 'the user'
-        : speakers.values
-            .firstWhere((s) => s.isUser, orElse: () => speakers.values.first)
-            .label;
+    final userLabel = _userLabel(speakers);
 
     // A compact, strict prompt for small on-device models: fewer fields, no
     // evidence ids (which sent the 1B model into repetition loops), and
@@ -88,10 +106,29 @@ JSON shape:
   "scoreOverall": 75,
   "scoreByDimension": [ {"dimension": "exact name", "score": 75, "rationale": "short reason"} ]
 }''';
+      // For a long meeting the orchestrator map-reduces: it digests the
+      // transcript in windowed chunks, then calls this with those `digests`
+      // instead of the raw transcript. Same JSON shape either way.
+      final String userText;
+      if (digests != null && digests.isNotEmpty) {
+        final b = StringBuffer(
+            'This is a long conversation, summarised in time order as section '
+            'digests below. Treat them together as the full transcript and '
+            'analyse the WHOLE conversation from them.\n');
+        for (var i = 0; i < digests.length; i++) {
+          b.writeln('\n--- Part ${i + 1} of ${digests.length} ---');
+          b.writeln(digests[i].trim());
+        }
+        userText = b.toString();
+      } else {
+        userText = 'Transcript:\n$transcript';
+      }
       return PromptRequest(
         system: simpleSystem,
-        user: 'Transcript:\n$transcript',
-        maxTokens: 4096,
+        user: userText,
+        // Output cap (not context): the structured JSON fits comfortably, and a
+        // smaller cap leaves more of the 4096 window for the input.
+        maxTokens: 1024,
         expectJson: true,
         modelOverride: modelOverride,
         task: 'analysis',
@@ -141,6 +178,52 @@ and the goal. Use the speaker labels as written for speakerId.''';
       expectJson: true,
       modelOverride: modelOverride,
       task: 'analysis',
+    );
+  }
+
+  /// MAP step of on-device map-reduce: summarise ONE windowed chunk of a long
+  /// transcript into a compact, plain-text digest. The [analysis] REDUCE step
+  /// then works from these digests instead of the raw transcript, so a long
+  /// meeting is analysed with full coverage without overflowing the small
+  /// on-device context window. Digests are also the per-session raw material the
+  /// communication-persona feature will reuse (PROJECT.md roadmap #5).
+  static PromptRequest digestChunk({
+    required Session session,
+    required Goal goal,
+    required Rubric rubric,
+    required List<Segment> segments,
+    required Map<String, Speaker> speakers,
+    required int partIndex,
+    required int partCount,
+    String? modelOverride,
+  }) {
+    final transcript = renderTranscript(segments, speakers, withIds: false);
+    final userLabel = _userLabel(speakers);
+    final system = '''
+You are a communication coach reading PART $partIndex of $partCount of ONE
+recorded conversation. Summarise ONLY this part into a compact digest that a
+later step will use to coach "$userLabel" on the whole conversation.
+
+Goal of the conversation: ${goal.name} — ${goal.description}
+${session.context.isEmpty ? '' : 'Context: ${session.context}'}
+
+From THIS part only, grounded in what was actually said, capture:
+- the main topics and points discussed
+- specific things "$userLabel" said or did, and how (tone, clarity, questions asked)
+- notable moments — briefly paraphrase a telling quote or two
+- any decisions, agreements, objections, or questions left open
+- anything relevant to the goal above
+
+Rules: 6-12 short bullet lines, each starting with "-". Be concrete and specific
+to this part. No headings, no preamble, no JSON — only the bullet lines. Never
+invent anything that is not in this part.''';
+    return PromptRequest(
+      system: system,
+      user: 'Transcript (part $partIndex of $partCount):\n$transcript',
+      maxTokens: 512,
+      expectJson: false,
+      modelOverride: modelOverride,
+      task: 'digest',
     );
   }
 

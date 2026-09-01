@@ -57,14 +57,17 @@ class MockAdapter implements LLMProvider {
     );
   }
 
-  // The prompt embeds lines like "[12.0s] (seg-id) Speaker: text".
+  // The prompt embeds lines like "[12.0s] (seg-id) Speaker: text". The segment
+  // id is optional — the compact on-device render omits it — so a line without
+  // one still parses (with a synthetic id for any evidence references).
   List<_Line> _extractTranscript(String prompt) {
-    final re = RegExp(r'\[(\d+)\.\ds\]\s*\((seg-[\w-]+)\)\s*([^:]+):\s*(.*)');
+    final re =
+        RegExp(r'\[(\d+)\.\ds\]\s*(?:\((seg-[\w-]+)\)\s*)?([^:]+):\s*(.*)');
     final lines = <_Line>[];
     for (final m in re.allMatches(prompt)) {
       lines.add(_Line(
         sec: int.parse(m.group(1)!),
-        segId: m.group(2)!,
+        segId: m.group(2) ?? 'seg-${m.group(1)}',
         speaker: m.group(3)!.trim(),
         text: m.group(4)!.trim(),
       ));

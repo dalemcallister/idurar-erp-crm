@@ -31,6 +31,12 @@ status, roadmap, decisions). Build/platform details: `V2_SETUP.md`. Branding:
 - **Record at 16 kHz mono** — whisper needs it; other rates transcribe empty.
 - **Small-model JSON is unreliable** → `analysis_orchestrator._parseJson`
   repairs common slips and falls back to field extraction. Keep it resilient.
+- **Small context window (4096 tokens)** → on-device prompts render the
+  transcript WITHOUT segment ids (`renderTranscript(withIds: false)`), and long
+  meetings are **map-reduced** (`_analyzeOnDevice`: digest each chunk, then
+  analyse from digests). Gated on the resolved provider's window, so the mock
+  fallback still takes the full-transcript path. Don't feed a long raw
+  transcript straight to the local model.
 - **DB writes:** sessions use UPDATE-in-place, never `INSERT OR REPLACE`
   (cascade deletes wiped analyses during v1).
 

@@ -133,14 +133,20 @@ Design notes:
   tolerate small-model output; compact strict on-device prompt to reduce errors.
 - **2026-08:** Record at 16 kHz mono (whisper requirement).
 - **2026-09:** Long recordings overflowed Gemma's 4096-token context (a ~9-min
-  meeting = ~16k tokens → `token ids are too long 16403 >= 4096`). Immediate
-  fix: cap the transcript FED to the model by evenly **sampling** segments
-  across the whole conversation (`AnalysisOrchestrator._cappedForPrompt`, ~6k
-  chars ≈ 1.6k tokens) and lower `maxOutputTokens` 2048 → 1536 so input+output
-  fit 4096. Dynamics/emotion/Q&A still use the full segments, so metrics stay
-  accurate. **Higher-quality follow-up:** hierarchical (map-reduce)
-  summarisation instead of sampling — aligns with the persona pillar's
-  per-session digest (roadmap #5), so build once and reuse.
+  meeting = ~16k tokens → `token ids are too long 16403 >= 4096`). First fix
+  (superseded): evenly sample segments to fit. **Now:** two changes together —
+  (a) on-device prompts render the transcript **without the UUID segment ids**
+  (`renderTranscript(withIds: false)`); those ids were ~50 chars/line and a big
+  share of the 16k tokens, and the compact prompt never cites them; (b) a
+  **map-reduce** path (`AnalysisOrchestrator._analyzeOnDevice`): short meetings
+  go in one call, long ones digest each windowed chunk (`PromptRegistry.
+  digestChunk`, MAP) then analyse from the digests (REDUCE) — full coverage, no
+  overflow. Per-call output budgets (`PromptRequest.maxTokens` → Gemma
+  `maxOutputTokens`: analysis 1024, digest 512) keep input+output inside 4096.
+  Map-reduce is gated on the **resolved provider's** window (≤8192), so a local
+  config that falls back to the offline mock (model not downloaded) or to cloud
+  takes the standard full-transcript path. The per-chunk digests are the same
+  raw material the **communication persona** (roadmap #5) will reuse.
 
 ---
 

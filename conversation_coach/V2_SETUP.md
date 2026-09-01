@@ -144,14 +144,19 @@ These are expected trade-offs of going fully on-device; we'll tune them on-devic
   tolerates fences/loose JSON, but expect rougher analyses. Options to improve:
   step up to a bigger model (Gemma3n E2B ~3.1 GB) in `local_models.dart`, or
   simplify the analysis prompt/schema for small models.
-- **Context window (handled):** the local model runs with a 4096-token window.
-  Long meetings overflowed it (a ~9-min transcript ≈ 16k tokens →
-  `token ids are too long 16403 >= 4096`). `AnalysisOrchestrator._cappedForPrompt`
-  now evenly **samples** segments across the whole conversation to ~6k chars
-  (≈ 1.6k tokens) before the analysis call, and `maxOutputTokens` is 1536, so
-  input+output fit 4096. Full segments still drive dynamics/emotion/Q&A. The
-  planned upgrade is map-reduce **summarisation** (better quality than sampling)
-  — see PROJECT.md decisions log / roadmap #5.
+- **Context window (handled — map-reduce):** the local model runs with a
+  4096-token window. Long meetings overflowed it (a ~9-min transcript ≈ 16k
+  tokens → `token ids are too long 16403 >= 4096`). Two things fix it:
+  1. On-device prompts render the transcript **without segment ids**
+     (`renderTranscript(withIds: false)`) — the UUID ids were ~50 chars/line and
+     a large share of those tokens, and the compact prompt never cites them.
+  2. `AnalysisOrchestrator._analyzeOnDevice` **map-reduces** long transcripts:
+     short ones analyse in a single call; long ones digest each windowed chunk
+     (`PromptRegistry.digestChunk`, MAP) then analyse from the digests (REDUCE).
+     Full coverage, no overflow. Output budgets (analysis 1024, digest 512
+     tokens) leave input room inside 4096. Gated on the resolved provider's
+     window (≤8192), so the mock/cloud fallback for a local config uses the
+     normal full-transcript path. Full segments still drive dynamics/emotion/Q&A.
 - **Performance:** on-device analysis takes noticeably longer than the cloud and
   needs a recent, higher-RAM phone; older devices may be slow or run out of
   memory. The GPU backend (`PreferredBackend.gpu`) helps where available.

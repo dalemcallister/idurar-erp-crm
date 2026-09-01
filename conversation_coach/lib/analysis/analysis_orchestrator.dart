@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 
 import '../audio/feature_extractor.dart';
@@ -85,25 +86,40 @@ class AnalysisOrchestrator {
 
     // On-device Gemma has a small (4096-token) context window, so a long
     // meeting's full transcript overflows it ("token ids are too long
-    // 16403 >= 4096"). Cap what we FEED the model — the dynamics/emotion
-    // metrics above are computed from the full `segments`, so accuracy there is
-    // unaffected; only the prose analysis works from a representative sample.
-    final isLocal = providerConfig.provider == ProviderKind.local;
-    final promptSegments =
-        isLocal ? _cappedForPrompt(segments, speakerMap) : segments;
-
-    final request = PromptRegistry.analysis(
-      session: session,
-      goal: goal,
-      rubric: rubric,
-      segments: promptSegments,
-      speakers: speakerMap,
-      modelOverride: providerConfig.perTaskOverrides['analysis'],
-      // Small on-device models need the compact, strict-JSON prompt.
-      simple: isLocal,
-    );
-
-    final response = await _completeWithRetry(provider, request);
+    // 16403 >= 4096"). The dynamics/emotion metrics above use the full
+    // `segments` and are unaffected; only the prose analysis has to fit the
+    // window. Short meetings go in one call; long ones are map-reduced
+    // (digest each windowed chunk, then analyse from the digests).
+    //
+    // Gate on the RESOLVED provider's window, not the config: if a local config
+    // falls back to the offline mock (model not downloaded) or a cloud model,
+    // that provider has a large window and takes the standard full-transcript
+    // path — which is also what the mock needs to parse segment ids.
+    final modelOverride = providerConfig.perTaskOverrides['analysis'];
+    final smallWindow = provider.capabilities.contextWindow <= 8192;
+    final PromptResponse response;
+    if (smallWindow) {
+      response = await _analyzeOnDevice(
+        provider: provider,
+        session: session,
+        goal: goal,
+        rubric: rubric,
+        segments: segments,
+        speakers: speakerMap,
+        modelOverride: modelOverride,
+      );
+    } else {
+      final request = PromptRegistry.analysis(
+        session: session,
+        goal: goal,
+        rubric: rubric,
+        segments: segments,
+        speakers: speakerMap,
+        modelOverride: modelOverride,
+        simple: false,
+      );
+      response = await _completeWithRetry(provider, request);
+    }
     final parsed = _parseJson(response.text);
 
     // 6. Aggregate + 7. Recommend.
@@ -131,33 +147,147 @@ class AnalysisOrchestrator {
     return analysis;
   }
 
-  /// Trims the transcript that is FED to a small on-device model so it fits the
-  /// model's context window (Gemma 4 E2B: 4096 tokens). A ~9-minute meeting is
-  /// ~16k tokens — far over the limit — so we evenly SAMPLE segments across the
-  /// whole conversation (preserving start/middle/end coverage and chronological
-  /// order) until the rendered transcript fits the character budget.
-  ///
-  /// [maxChars] ≈ 1.6k tokens at ~4 chars/token, leaving room for the ~0.6k
-  /// system prompt and 1536 output tokens inside 4096. This only affects the
-  /// prose analysis prompt; the full segment list still drives dynamics/emotion
-  /// metrics and Q&A indexing, so those stay accurate on long recordings.
-  List<Segment> _cappedForPrompt(
+  // On-device context budget (Gemma 4 E2B: 4096-token window). Char budgets
+  // are conservative (~3.3 chars/token) and assume the id-free transcript the
+  // local prompts render. See PromptRegistry.renderTranscript(withIds: false).
+  static const int _directCharBudget = 6500; // transcript fits one analysis call
+  static const int _chunkCharBudget = 9000; // per MAP (digest) call
+  static const int _reduceCharBudget = 6500; // joined digests for the REDUCE call
+
+  /// Runs the analysis on a small on-device model, fitting it into the tiny
+  /// context window. Short transcripts go in a single call; long ones are
+  /// map-reduced: MAP each windowed chunk to a compact digest, then REDUCE the
+  /// digests into the structured analysis. Full coverage, no overflow.
+  Future<PromptResponse> _analyzeOnDevice({
+    required LLMProvider provider,
+    required Session session,
+    required Goal goal,
+    required Rubric rubric,
+    required List<Segment> segments,
+    required Map<String, Speaker> speakers,
+    String? modelOverride,
+  }) async {
+    final full =
+        PromptRegistry.renderTranscript(segments, speakers, withIds: false);
+
+    // Short enough for one direct analysis call.
+    if (full.length <= _directCharBudget) {
+      final req = PromptRegistry.analysis(
+        session: session,
+        goal: goal,
+        rubric: rubric,
+        segments: segments,
+        speakers: speakers,
+        modelOverride: modelOverride,
+        simple: true,
+      );
+      return _completeWithRetry(provider, req);
+    }
+
+    // Long meeting: MAP each windowed chunk to a digest.
+    final chunks =
+        _chunkSegments(segments, speakers, maxChars: _chunkCharBudget);
+    debugPrint('[MAPREDUCE] transcript ${full.length} chars → '
+        '${chunks.length} chunks');
+    final digests = <String>[];
+    for (var i = 0; i < chunks.length; i++) {
+      final req = PromptRegistry.digestChunk(
+        session: session,
+        goal: goal,
+        rubric: rubric,
+        segments: chunks[i],
+        speakers: speakers,
+        partIndex: i + 1,
+        partCount: chunks.length,
+        modelOverride: modelOverride,
+      );
+      try {
+        final r = await _completeWithRetry(provider, req);
+        final d = r.text.trim();
+        if (d.isNotEmpty) digests.add(d);
+        debugPrint('[MAPREDUCE] digest ${i + 1}/${chunks.length} '
+            '(${d.length} chars)');
+      } catch (e) {
+        // One chunk failing to digest shouldn't lose the whole analysis — the
+        // remaining digests still cover most of the conversation.
+        debugPrint('[MAPREDUCE] digest ${i + 1}/${chunks.length} failed: $e');
+      }
+    }
+
+    // If digesting produced nothing usable, fall back to a sampled direct call
+    // so the user still gets an analysis rather than an error.
+    if (digests.isEmpty) {
+      final sampled =
+          _sampleSegments(segments, speakers, maxChars: _directCharBudget);
+      final req = PromptRegistry.analysis(
+        session: session,
+        goal: goal,
+        rubric: rubric,
+        segments: sampled,
+        speakers: speakers,
+        modelOverride: modelOverride,
+        simple: true,
+      );
+      return _completeWithRetry(provider, req);
+    }
+
+    // REDUCE: analyse from the digests. Guard against a very long meeting
+    // producing more digests than the window holds by trimming the middle.
+    final fitted = _fitDigests(digests, _reduceCharBudget);
+    final reduceReq = PromptRegistry.analysis(
+      session: session,
+      goal: goal,
+      rubric: rubric,
+      segments: const [],
+      speakers: speakers,
+      modelOverride: modelOverride,
+      simple: true,
+      digests: fitted,
+    );
+    return _completeWithRetry(provider, reduceReq);
+  }
+
+  /// Splits segments into consecutive runs whose id-free rendered transcript
+  /// stays under [maxChars], so each digest (MAP) call fits the model window.
+  List<List<Segment>> _chunkSegments(
     List<Segment> segments,
     Map<String, Speaker> speakers, {
-    int maxChars = 6000,
+    required int maxChars,
+  }) {
+    final chunks = <List<Segment>>[];
+    var current = <Segment>[];
+    var len = 0;
+    for (final s in segments) {
+      final line =
+          PromptRegistry.renderTranscript([s], speakers, withIds: false).length;
+      if (current.isNotEmpty && len + line > maxChars) {
+        chunks.add(current);
+        current = <Segment>[];
+        len = 0;
+      }
+      current.add(s);
+      len += line;
+    }
+    if (current.isNotEmpty) chunks.add(current);
+    return chunks;
+  }
+
+  /// Evenly samples segments across the whole conversation until the rendered
+  /// transcript fits [maxChars] — a last-resort fallback that preserves
+  /// start/middle/end coverage and chronological order.
+  List<Segment> _sampleSegments(
+    List<Segment> segments,
+    Map<String, Speaker> speakers, {
+    required int maxChars,
   }) {
     if (segments.isEmpty) return segments;
-    final full = PromptRegistry.renderTranscript(segments, speakers);
+    final full =
+        PromptRegistry.renderTranscript(segments, speakers, withIds: false);
     if (full.length <= maxChars) return segments;
-
-    // How many segments can we keep, given the average rendered line length?
     final avgLine = full.length / segments.length;
     var keep = (maxChars / avgLine).floor();
     if (keep < 1) keep = 1;
     if (keep >= segments.length) return segments;
-
-    // Evenly spaced pick across the timeline keeps the arc of the conversation
-    // rather than just the opening minutes.
     final step = segments.length / keep;
     final picked = <Segment>[];
     final seen = <int>{};
@@ -166,6 +296,19 @@ class AnalysisOrchestrator {
       if (seen.add(idx)) picked.add(segments[idx]);
     }
     return picked;
+  }
+
+  /// Keeps the joined digests within [maxChars] for the REDUCE call by dropping
+  /// evenly from the middle (first and last are always kept) — only triggers on
+  /// very long meetings that yield many digests.
+  List<String> _fitDigests(List<String> digests, int maxChars) {
+    int total(List<String> ds) => ds.fold(0, (a, d) => a + d.length + 24);
+    if (total(digests) <= maxChars) return digests;
+    final keep = List<String>.from(digests);
+    while (keep.length > 2 && total(keep) > maxChars) {
+      keep.removeAt(keep.length ~/ 2);
+    }
+    return keep;
   }
 
   Future<List<Speaker>> _ensureSpeakers(

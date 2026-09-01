@@ -23,7 +23,7 @@ class LocalGemmaAdapter implements LLMProvider {
 
   @override
   LLMCapabilities get capabilities =>
-      const LLMCapabilities(streaming: true, jsonMode: true, contextWindow: 2048);
+      const LLMCapabilities(streaming: true, jsonMode: true, contextWindow: 4096);
 
   @override
   Future<List<LLMModel>> listModels() async => const [
@@ -51,8 +51,11 @@ class LocalGemmaAdapter implements LLMProvider {
             'markdown code fences and no text before or after it.'
         : request.system;
     try {
-      final text = await LocalModels.instance
-          .analyze(system: system, user: request.user);
+      final text = await LocalModels.instance.analyze(
+        system: system,
+        user: request.user,
+        maxOutputTokens: request.maxTokens,
+      );
       debugPrint('[GEMMA] raw output (${text.length} chars):\n$text');
       if (text.trim().isEmpty) {
         throw const LLMException('The on-device model returned an empty response.');

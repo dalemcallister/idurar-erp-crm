@@ -124,18 +124,20 @@ class LocalModels {
   Future<String> analyze({
     required String system,
     required String user,
+    int maxOutputTokens = 1024,
   }) async {
     final model = await _ensureGemma();
     // A fresh chat per call keeps each analysis independent (no history bleed).
     //
     // Budget the 4096-token context window: input (system + transcript) and
-    // output must both fit. The orchestrator caps the transcript it sends
-    // (see AnalysisOrchestrator._cappedForPrompt) to ~1.6k tokens, the system
-    // prompt is ~0.6k, so 1536 output tokens keeps the total safely under 4096.
-    // (Long meetings previously overflowed: "token ids are too long 16403 >= 4096".)
+    // output must both fit. [maxOutputTokens] is chosen per call by the prompt
+    // (analysis ~1024, digest ~512) and the orchestrator keeps the input within
+    // the remaining budget by rendering without segment ids and, for long
+    // meetings, map-reducing the transcript. (Long meetings previously
+    // overflowed: "token ids are too long 16403 >= 4096".)
     final chat = await model.createChat(
       systemInstruction: system,
-      maxOutputTokens: 1536,
+      maxOutputTokens: maxOutputTokens,
     );
     await chat.addQueryChunk(Message.text(text: user, isUser: true));
     final buffer = StringBuffer();
