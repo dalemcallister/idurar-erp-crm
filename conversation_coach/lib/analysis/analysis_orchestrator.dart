@@ -83,15 +83,24 @@ class AnalysisOrchestrator {
     await repo.updateSessionStatus(session.id, SessionStatus.analyzing);
     final provider = await providers.resolveForAnalysis(providerConfig);
 
+    // On-device Gemma has a small (4096-token) context window, so a long
+    // meeting's full transcript overflows it ("token ids are too long
+    // 16403 >= 4096"). Cap what we FEED the model — the dynamics/emotion
+    // metrics above are computed from the full `segments`, so accuracy there is
+    // unaffected; only the prose analysis works from a representative sample.
+    final isLocal = providerConfig.provider == ProviderKind.local;
+    final promptSegments =
+        isLocal ? _cappedForPrompt(segments, speakerMap) : segments;
+
     final request = PromptRegistry.analysis(
       session: session,
       goal: goal,
       rubric: rubric,
-      segments: segments,
+      segments: promptSegments,
       speakers: speakerMap,
       modelOverride: providerConfig.perTaskOverrides['analysis'],
       // Small on-device models need the compact, strict-JSON prompt.
-      simple: providerConfig.provider == ProviderKind.local,
+      simple: isLocal,
     );
 
     final response = await _completeWithRetry(provider, request);
@@ -120,6 +129,43 @@ class AnalysisOrchestrator {
     await repo.upsertSession(updated);
 
     return analysis;
+  }
+
+  /// Trims the transcript that is FED to a small on-device model so it fits the
+  /// model's context window (Gemma 4 E2B: 4096 tokens). A ~9-minute meeting is
+  /// ~16k tokens — far over the limit — so we evenly SAMPLE segments across the
+  /// whole conversation (preserving start/middle/end coverage and chronological
+  /// order) until the rendered transcript fits the character budget.
+  ///
+  /// [maxChars] ≈ 1.6k tokens at ~4 chars/token, leaving room for the ~0.6k
+  /// system prompt and 1536 output tokens inside 4096. This only affects the
+  /// prose analysis prompt; the full segment list still drives dynamics/emotion
+  /// metrics and Q&A indexing, so those stay accurate on long recordings.
+  List<Segment> _cappedForPrompt(
+    List<Segment> segments,
+    Map<String, Speaker> speakers, {
+    int maxChars = 6000,
+  }) {
+    if (segments.isEmpty) return segments;
+    final full = PromptRegistry.renderTranscript(segments, speakers);
+    if (full.length <= maxChars) return segments;
+
+    // How many segments can we keep, given the average rendered line length?
+    final avgLine = full.length / segments.length;
+    var keep = (maxChars / avgLine).floor();
+    if (keep < 1) keep = 1;
+    if (keep >= segments.length) return segments;
+
+    // Evenly spaced pick across the timeline keeps the arc of the conversation
+    // rather than just the opening minutes.
+    final step = segments.length / keep;
+    final picked = <Segment>[];
+    final seen = <int>{};
+    for (var i = 0; i < keep; i++) {
+      final idx = (i * step).floor().clamp(0, segments.length - 1);
+      if (seen.add(idx)) picked.add(segments[idx]);
+    }
+    return picked;
   }
 
   Future<List<Speaker>> _ensureSpeakers(

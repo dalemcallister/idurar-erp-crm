@@ -144,10 +144,14 @@ These are expected trade-offs of going fully on-device; we'll tune them on-devic
   tolerates fences/loose JSON, but expect rougher analyses. Options to improve:
   step up to a bigger model (Gemma3n E2B ~3.1 GB) in `local_models.dart`, or
   simplify the analysis prompt/schema for small models.
-- **Context window:** the local model runs with `maxTokens: 2048`. A long
-  meeting's transcript may exceed that. If analyses truncate or fail on long
-  sessions, we'll add transcript chunking/summarisation before the analysis
-  call (similar to how v1 chunked audio for Whisper).
+- **Context window (handled):** the local model runs with a 4096-token window.
+  Long meetings overflowed it (a ~9-min transcript ≈ 16k tokens →
+  `token ids are too long 16403 >= 4096`). `AnalysisOrchestrator._cappedForPrompt`
+  now evenly **samples** segments across the whole conversation to ~6k chars
+  (≈ 1.6k tokens) before the analysis call, and `maxOutputTokens` is 1536, so
+  input+output fit 4096. Full segments still drive dynamics/emotion/Q&A. The
+  planned upgrade is map-reduce **summarisation** (better quality than sampling)
+  — see PROJECT.md decisions log / roadmap #5.
 - **Performance:** on-device analysis takes noticeably longer than the cloud and
   needs a recent, higher-RAM phone; older devices may be slow or run out of
   memory. The GPU backend (`PreferredBackend.gpu`) helps where available.

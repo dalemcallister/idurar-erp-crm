@@ -132,6 +132,15 @@ Design notes:
 - **2026-08:** Resilient JSON parsing (repairs + field-extraction fallback) to
   tolerate small-model output; compact strict on-device prompt to reduce errors.
 - **2026-08:** Record at 16 kHz mono (whisper requirement).
+- **2026-09:** Long recordings overflowed Gemma's 4096-token context (a ~9-min
+  meeting = ~16k tokens → `token ids are too long 16403 >= 4096`). Immediate
+  fix: cap the transcript FED to the model by evenly **sampling** segments
+  across the whole conversation (`AnalysisOrchestrator._cappedForPrompt`, ~6k
+  chars ≈ 1.6k tokens) and lower `maxOutputTokens` 2048 → 1536 so input+output
+  fit 4096. Dynamics/emotion/Q&A still use the full segments, so metrics stay
+  accurate. **Higher-quality follow-up:** hierarchical (map-reduce)
+  summarisation instead of sampling — aligns with the persona pillar's
+  per-session digest (roadmap #5), so build once and reuse.
 
 ---
 

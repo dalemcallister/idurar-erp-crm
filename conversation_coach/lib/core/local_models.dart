@@ -127,10 +127,15 @@ class LocalModels {
   }) async {
     final model = await _ensureGemma();
     // A fresh chat per call keeps each analysis independent (no history bleed).
-    // Cap output to keep a runaway/repetition loop from ballooning the reply.
+    //
+    // Budget the 4096-token context window: input (system + transcript) and
+    // output must both fit. The orchestrator caps the transcript it sends
+    // (see AnalysisOrchestrator._cappedForPrompt) to ~1.6k tokens, the system
+    // prompt is ~0.6k, so 1536 output tokens keeps the total safely under 4096.
+    // (Long meetings previously overflowed: "token ids are too long 16403 >= 4096".)
     final chat = await model.createChat(
       systemInstruction: system,
-      maxOutputTokens: 2048,
+      maxOutputTokens: 1536,
     );
     await chat.addQueryChunk(Message.text(text: user, isUser: true));
     final buffer = StringBuffer();
