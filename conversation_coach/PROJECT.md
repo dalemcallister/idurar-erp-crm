@@ -114,8 +114,32 @@ Design notes:
 - Privacy invariant holds: computed entirely on-device from local data.
 
 ### 6. Distribution & store readiness
-- **Un-gated on-device model** so no HF token ships (prerequisite for wide
-  distribution). Rotate the current HF token.
+- **Un-gated / self-hosted model download** so no HF token ships (prerequisite
+  for wide distribution). Rotate the current HF token regardless. Un-gating only
+  changes *how the file is fetched* — inference is unchanged.
+  - **Gemma model host:** already URL-overridable, no code change —
+    `--dart-define=GEMMA_MODEL_URL=<https url>` and drop the HF token. Keep the
+    filename stable (install-check keys off the URL's last path segment).
+  - **Whisper model host:** needs a small change — `whisper_ggml.downloadModel`
+    fetches from its own source, so add a `WHISPER_MODEL_URL` override in
+    `local_models.dart` that fetches straight to the plugin's `getPath`
+    location (mirror the Gemma pattern). ~15 lines.
+  - **Preferred host: Cloudflare R2** (zero egress fees — the Gemma file is
+    ~2.4 GB, so egress is the real cost; ~240 GB per 100 fresh installs). Gives
+    a stable HTTPS URL with Range support out of the box. A plain VPS also works
+    for a few testers but needs: valid HTTPS cert (Let's Encrypt), **HTTP Range/
+    resumable** support (else a 2.4 GB mobile download restarts on every drop),
+    correct `Content-Length`, bandwidth headroom. B2/S3+CDN are alternatives.
+  - **Integrity:** pin a size/checksum for the Gemma file too (we already reject
+    an undersized Whisper file) so a truncated/corrupt download is caught.
+  - **Licensing:** un-gated ≠ unrestricted. Gemma stays under the **Gemma Terms
+    of Use** + Prohibited Use Policy — as redistributor we must pass the terms
+    through (in-app "Powered by Gemma, subject to the Gemma Terms of Use" notice
+    + link). Whisper is MIT; ggml conversions permissive — no issue. (Not legal
+    advice — read the Gemma terms before a public launch.)
+  - **Deliverable when picked up:** `WHISPER_MODEL_URL` override + Gemma
+    size/checksum check + in-app Gemma notice + `SELF_HOSTING.md` (nginx and R2
+    setup). Makes the switch a build-flag away once the files are uploaded.
 - App Store / Play Store: icons ✅, privacy nutrition labels are simple (on-device),
   store listings, screenshots.
 
