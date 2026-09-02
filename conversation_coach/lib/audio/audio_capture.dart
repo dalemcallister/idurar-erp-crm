@@ -28,8 +28,8 @@ class MicTestResult {
     required this.isUsb,
   });
 
-  /// USB-C UAC delivers full-bandwidth 48 kHz; warn below that (Tech Spec §4.3).
-  bool get isLowQuality => sampleRate < 32000;
+  /// v2 records 16 kHz mono for on-device Whisper, so only warn well below that.
+  bool get isLowQuality => sampleRate < 12000;
 }
 
 /// Wraps audio capture for the built-in mic and a USB-C connected external
@@ -79,8 +79,9 @@ class AudioCapture {
 
   /// Quick level/quality test before recording (F-CAP-04).
   Future<MicTestResult> testInput(MicInput device) async {
-    final sampleRate = device.isUsb ? 48000 : 44100;
-    final channels = device.isUsb ? 2 : 1;
+    // Match the actual recording format (16 kHz mono for on-device Whisper).
+    const sampleRate = 16000;
+    const channels = 1;
     final config = rec.RecordConfig(
       encoder: rec.AudioEncoder.wav,
       sampleRate: sampleRate,
@@ -112,9 +113,11 @@ class AudioCapture {
   }) async {
     _currentPath = filePath;
     _isUsb = device.isUsb;
-    _sampleRate = device.isUsb ? 48000 : 44100;
-    // Hardware channel separation for a two-transmitter kit (F-CAP-03).
-    _channels = device.isUsb ? 2 : 1;
+    // v2 records 16 kHz mono — exactly what on-device Whisper expects, so no
+    // resampling is needed (and files are smaller). The only consumer of the
+    // audio is the local Whisper engine.
+    _sampleRate = 16000;
+    _channels = 1;
     _accumulated = Duration.zero;
     _markedMomentsMs.clear();
 

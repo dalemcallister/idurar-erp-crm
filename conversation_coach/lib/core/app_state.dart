@@ -9,10 +9,10 @@ import '../data/models/session.dart';
 import '../data/repository.dart';
 import '../data/secure_keystore.dart';
 import '../llm/provider_registry.dart';
-import '../transcription/cloud_transcription.dart';
-import '../transcription/mock_transcription.dart';
+import '../transcription/local_whisper_transcription.dart';
 import '../transcription/transcription_engine.dart';
 import 'goal_templates.dart';
+import 'local_models.dart';
 import 'pricing.dart';
 
 /// Settings keys persisted in the encrypted `app_settings` table.
@@ -80,8 +80,27 @@ class AppState extends ChangeNotifier {
       budgetRemaining > 0 &&
       budgetRemaining < budgetDeposit * 0.15;
 
-  /// Id of the provider the user prefers (remembered across fallbacks).
-  String preferredProviderId = ProviderConfig.defaultClaude().id;
+  /// Id of the provider the user prefers. v2 is on-device only, so this is the
+  /// local Gemma provider.
+  String preferredProviderId = ProviderConfig.localGemma().id;
+
+  /// On-device analysis-model download state (v2). Null when idle; 0..100 while
+  /// downloading.
+  int? gemmaDownloadPercent;
+  bool gemmaInstalled = false;
+
+  /// Last model-download error, surfaced in Settings so failures aren't silent.
+  String? gemmaError;
+
+  /// Per-session analysis-pipeline error, surfaced on the failed session screen
+  /// so transcription/analysis failures are diagnosable on-device.
+  final Map<String, String> analysisErrors = {};
+
+  /// On-device transcription-model (Whisper) state. No download progress is
+  /// available from the plugin, so [whisperDownloading] drives a spinner.
+  bool whisperInstalled = false;
+  bool whisperDownloading = false;
+  String? whisperError;
 
   Future<void> init() async {
     await database.open();
@@ -94,6 +113,15 @@ class AppState extends ChangeNotifier {
     await _seedIfNeeded();
     await _loadSettings();
     await refresh();
+
+    // v2 is on-device only: force the local provider even if an older install
+    // had a cloud provider selected.
+    if (preferredProvider.provider != ProviderKind.local &&
+        preferredProvider.provider != ProviderKind.mock) {
+      await selectProvider(ProviderConfig.localGemma().id);
+    }
+    gemmaInstalled = await LocalModels.instance.isGemmaInstalled();
+    whisperInstalled = await LocalModels.instance.isWhisperInstalled();
 
     _ready = true;
     notifyListeners();
@@ -109,22 +137,23 @@ class AppState extends ChangeNotifier {
       await repo.upsertGoal(g);
     }
 
-    // Default provider configs: Claude (default, F-MOD-01) + the offline demo.
-    // These are persisted once and then never silently overwritten, so the
-    // user's real configuration survives any temporary fallback.
+    // v2 provider configs: the on-device Gemma provider (default) + the offline
+    // demo fallback. Upserted every launch (stable ids) so the on-device
+    // provider always exists, including on installs upgraded from v1.
+    await repo.upsertProviderConfig(ProviderConfig.localGemma());
+    await repo.upsertProviderConfig(ProviderConfig.mock());
     final configs = await repo.providerConfigs();
-    if (configs.isEmpty) {
-      await repo.upsertProviderConfig(ProviderConfig.defaultClaude());
-      await repo.upsertProviderConfig(ProviderConfig.mock());
+    if (configs.isEmpty ||
+        await repo.getSetting(SettingsKeys.preferredProvider) == null) {
       await repo.setSetting(
-          SettingsKeys.preferredProvider, ProviderConfig.defaultClaude().id);
+          SettingsKeys.preferredProvider, ProviderConfig.localGemma().id);
     }
   }
 
   Future<void> _loadSettings() async {
     preferredProviderId =
         await repo.getSetting(SettingsKeys.preferredProvider) ??
-            ProviderConfig.defaultClaude().id;
+            ProviderConfig.localGemma().id;
     language = await repo.getSetting(SettingsKeys.language) ?? 'en';
     transcriptionEngineKind =
         await repo.getSetting(SettingsKeys.transcriptionEngine) ?? 'demo';
@@ -158,13 +187,15 @@ class AppState extends ChangeNotifier {
             : providerConfigs.first,
       );
 
-  /// True when the preferred provider needs a key but none is stored — meaning
-  /// analysis will transparently fall back to the offline demo provider. The
-  /// preferred config is untouched and can be reverted to the moment a key is
-  /// added (e.g. back at your desktop).
+  /// True when analysis will fall back to the offline demo. In v2 that means
+  /// the on-device analysis model hasn't been downloaded yet (until then the
+  /// built-in demo analysis is used).
   Future<bool> isFallbackActive() async {
     final p = preferredProvider;
     if (p.provider == ProviderKind.mock) return false;
+    if (p.provider == ProviderKind.local) {
+      return !(await LocalModels.instance.isGemmaInstalled());
+    }
     if (p.apiKeyRef == null) return true;
     return !(await keystore.has(p.apiKeyRef!));
   }
@@ -293,27 +324,66 @@ class AppState extends ChangeNotifier {
 
   Future<bool> hasAsrKey() => keystore.has(SettingsKeys.asrKeyRef);
 
-  /// True when cloud transcription is selected but no ASR key is set — so the
-  /// app will fall back to the offline demo transcript.
-  Future<bool> cloudTranscriptionUnconfigured() async =>
-      transcriptionEngineKind == 'cloud' && !(await hasAsrKey());
-
-  /// Builds the transcription engine for the current setting. The cloud engine
-  /// only sends audio when the user has opted in AND configured an ASR key;
-  /// otherwise it falls back to the offline demo transcript.
+  /// Builds the transcription engine (v2: always on-device Whisper). Audio
+  /// never leaves the device.
   Future<TranscriptionEngine> transcriptionEngine() async {
-    if (transcriptionEngineKind == 'cloud') {
-      final key = await keystore.read(SettingsKeys.asrKeyRef);
-      if ((key ?? '').isNotEmpty) {
-        return CloudTranscriptionEngine(
-          endpointUrl:
-              asrEndpoint.isEmpty ? 'https://api.openai.com/v1' : asrEndpoint,
-          apiKey: key,
-          model: asrModel.isEmpty ? 'whisper-1' : asrModel,
-        );
-      }
+    return LocalWhisperEngine();
+  }
+
+  // ---- On-device models (v2) ----------------------------------------------
+
+  /// Downloads + installs the on-device analysis model, streaming progress into
+  /// [gemmaDownloadPercent].
+  Future<void> installGemma() async {
+    gemmaError = null;
+    gemmaDownloadPercent = 0;
+    notifyListeners();
+    try {
+      await LocalModels.instance.installGemma(onProgress: (p) {
+        gemmaDownloadPercent = p;
+        notifyListeners();
+      });
+      gemmaInstalled = true;
+    } catch (e, st) {
+      gemmaError = e.toString();
+      debugPrint('[LOCAL] gemma install failed: $e\n$st');
+    } finally {
+      gemmaDownloadPercent = null;
+      gemmaInstalled = await LocalModels.instance.isGemmaInstalled();
+      notifyListeners();
     }
-    return MockTranscriptionEngine();
+  }
+
+  /// Downloads the on-device transcription model (Whisper). No progress is
+  /// reported by the plugin, so this just toggles [whisperDownloading].
+  Future<void> installWhisper() async {
+    whisperError = null;
+    whisperDownloading = true;
+    notifyListeners();
+    try {
+      await LocalModels.instance.ensureWhisperReady();
+      whisperInstalled = true;
+    } catch (e, st) {
+      whisperError = e.toString();
+      debugPrint('[LOCAL] whisper install failed: $e\n$st');
+    } finally {
+      whisperDownloading = false;
+      whisperInstalled = await LocalModels.instance.isWhisperInstalled();
+      notifyListeners();
+    }
+  }
+
+  /// Removes the on-device analysis model to reclaim storage.
+  Future<void> removeGemma() async {
+    await LocalModels.instance.uninstallGemma();
+    gemmaInstalled = false;
+    notifyListeners();
+  }
+
+  Future<bool> refreshGemmaInstalled() async {
+    gemmaInstalled = await LocalModels.instance.isGemmaInstalled();
+    notifyListeners();
+    return gemmaInstalled;
   }
 
   // ---- Analysis pipeline ---------------------------------------------------
@@ -324,13 +394,17 @@ class AppState extends ChangeNotifier {
   /// so a transient failure (e.g. a flaky network) can be re-run on the audio
   /// already on disk — no re-recording needed.
   Future<void> runAnalysisPipeline(Session session, String audioPath) async {
+    analysisErrors.remove(session.id);
     try {
       final goal = await repo.goal(session.goalId);
       final rubric = goal == null ? null : await repo.rubric(goal.rubricId);
       if (goal == null || rubric == null) {
         debugPrint('[PIPELINE] missing goal/rubric for ${session.goalId} '
             '-> marking failed');
+        analysisErrors[session.id] =
+            'Missing goal/rubric for this session.';
         await repo.updateSessionStatus(session.id, SessionStatus.failed);
+        notifyListeners();
         return;
       }
       final engine = await transcriptionEngine();
@@ -348,7 +422,9 @@ class AppState extends ChangeNotifier {
       if (cost != null) await recordSpend(cost);
     } catch (e, st) {
       debugPrint('[PIPELINE] FAILED for ${session.id}: $e\n$st');
+      analysisErrors[session.id] = e.toString();
       await repo.updateSessionStatus(session.id, SessionStatus.failed);
+      notifyListeners();
     }
   }
 

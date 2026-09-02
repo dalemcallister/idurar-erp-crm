@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../core/app_state.dart';
-import '../data/models/provider_config.dart';
 import 'new_session_screen.dart';
 
 /// Home / Record — the home screen's primary action is Record (Design
@@ -103,9 +102,9 @@ class _FallbackBanner extends StatelessWidget {
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    'No ${state.preferredProvider.provider.displayName} key yet — '
-                    'using the built-in offline demo. Your provider choice is '
-                    'saved; add a key in Settings to switch back.',
+                    'Using the built-in offline demo analysis. Download the '
+                    'on-device analysis model in Settings → On-device models '
+                    'for real, private analysis.',
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ),

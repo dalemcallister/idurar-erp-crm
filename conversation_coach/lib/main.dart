@@ -1,12 +1,21 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'core/app_state.dart';
+import 'core/local_models.dart';
 import 'core/theme.dart';
 import 'ui/root_shell.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Initialize the on-device inference engine up front (v2 is fully offline).
+  // Non-fatal if it fails here — model download/inference will surface errors.
+  try {
+    await LocalModels.instance.initEngine();
+  } catch (e) {
+    debugPrint('[LOCAL] engine init deferred: $e');
+  }
   runApp(const ConversationCoachApp());
 }
 

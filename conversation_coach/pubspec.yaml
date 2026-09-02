@@ -4,11 +4,11 @@ description: >-
   Record a conversation over a USB-C mic, set a goal, and get an evidence-backed,
   Claude-powered analysis with a per-session "ask the conversation" Q&A.
 publish_to: "none"
-version: 0.1.0+1
+version: 2.0.0+4
 
 environment:
-  sdk: ">=3.6.0 <4.0.0"
-  flutter: ">=3.27.0"
+  sdk: ">=3.7.0 <4.0.0"
+  flutter: ">=3.29.0"
 
 dependencies:
   flutter:
@@ -37,6 +37,14 @@ dependencies:
   # Opens the device mail composer (mailto:) to send the follow-up / action
   # steps email — no backend, the user's own mail client sends it.
   url_launcher: ^6.3.0
+
+  # --- v2: fully on-device inference (no keys, nothing leaves the phone) ---
+  # On-device LLM (analysis) via LiteRT-LM / Gemma. `flutter_gemma` is the API;
+  # `flutter_gemma_litertlm` provides the LiteRtLmEngine runtime.
+  flutter_gemma: ^1.6.5
+  flutter_gemma_litertlm: ^1.5.3
+  # On-device Whisper (speech-to-text) via whisper.cpp.
+  whisper_ggml: ^2.6.0
 
   # Charts for the progress trends and emotion timeline.
   fl_chart: ^0.68.0

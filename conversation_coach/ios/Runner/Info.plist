@@ -48,10 +48,17 @@
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 
-	<!-- The app only uses standard HTTPS (TLS) to reach the model/ASR providers,
-	     which is exempt encryption. Declaring this lets TestFlight/App Store
-	     uploads skip the export-compliance questionnaire each time. -->
+	<!-- The app only uses standard HTTPS (TLS) — for the one-time on-device
+	     model download — which is exempt encryption. Declaring this lets
+	     TestFlight/App Store uploads skip the export-compliance questionnaire. -->
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+
+	<!-- v2 on-device inference (flutter_gemma / LiteRT-LM): expose the model
+	     files for management, and declare local-network use for the runtime. -->
+	<key>UIFileSharingEnabled</key>
+	<true/>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Used only by the on-device AI model runtime. No data leaves your device.</string>
 </dict>
 </plist>
